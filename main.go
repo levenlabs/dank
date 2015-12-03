@@ -20,11 +20,7 @@ func main() {
 	addr := config.ListenAddr
 
 	if config.SkyAPIAddr != "" {
-		skyapiAddr, err := srvclient.SRV(config.SkyAPIAddr)
-		if err != nil {
-			llog.Fatal("srv lookup of skyapi failed", llog.KV{"err": err})
-		}
-
+		skyapiAddr := srvclient.MaybeSRV(config.SkyAPIAddr)
 		kv := llog.KV{"skyapiAddr": skyapiAddr}
 		llog.Info("connecting to skyapi", kv)
 

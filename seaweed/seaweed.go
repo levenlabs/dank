@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/levenlabs/dank/config"
 	"github.com/levenlabs/go-llog"
+	"github.com/levenlabs/go-srvclient"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // AssignResult holds the result of the assign call to seaweed. It exposes
@@ -40,18 +42,12 @@ type location struct {
 
 //todo: RawURLEncoding
 var encoder = base64.URLEncoding
-var assignURL string
-var lookupURL string
 
 func init() {
 	if config.SeaweedAddr == "" {
 		llog.Fatal("--seaweed-addr is required")
 	}
-	//todo: wtf?
-	rand.Seed(rand.Int63())
-
-	assignURL = "http://" + config.SeaweedAddr + "/dir/assign"
-	lookupURL = "http://" + config.SeaweedAddr + "/dir/lookup?volumeId="
+	rand.Seed(time.Now().UnixNano())
 }
 
 // Returns the filename useful for uploading. It's base64-encoded to ensure url
@@ -103,7 +99,8 @@ func NewResult(u, filename string) (*AssignResult, error) {
 // guarantee the replication of the file and ttl can be sent to expire the file
 // after a specific amount of time. See the seaweedfs docs.
 func Assign(replication, ttl string) (*AssignResult, error) {
-	u, err := url.Parse(assignURL)
+	uStr := "http://" + srvclient.MaybeSRV(config.SeaweedAddr) + "/dir/assign"
+	u, err := url.Parse(uStr)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +112,7 @@ func Assign(replication, ttl string) (*AssignResult, error) {
 		q.Set("ttl", ttl)
 	}
 	u.RawQuery = q.Encode()
-	uStr := u.String()
+	uStr = u.String()
 
 	kv := llog.KV{
 		"url": uStr,
@@ -208,7 +205,7 @@ func Get(filename string, w io.Writer) error {
 	}
 	//fid's format is volumeId,somestuff
 	parts := strings.Split(fid, ",")
-	uStr := lookupURL + parts[0]
+	uStr := "http://" + srvclient.MaybeSRV(config.SeaweedAddr) + "/dir/lookup?volumeId=" + parts[0]
 
 	kv := llog.KV{
 		"url": uStr,
