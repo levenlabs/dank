@@ -16,7 +16,7 @@ var (
 )
 
 func init() {
-	l := lever.New("message-api", nil)
+	l := lever.New("dank", nil)
 	l.Add(lever.Param{
 		Name:        "--listen-addr",
 		Description: "address:port to listen for http requests on, or just :port",
