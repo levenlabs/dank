@@ -77,7 +77,7 @@ Params: `sig`, `filename`, `formKey`
 
 Example:
 ```
-POST /assign?sig=abcdefabcdef&filename=abcdabcd
+POST /upload?sig=abcdefabcdef&filename=abcdabcd
 ... file contents ...
 ```
 
