@@ -1,22 +1,23 @@
 package upload
 
 import (
-	"github.com/levenlabs/go-llog"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
+	"fmt"
 	"github.com/levenlabs/dank/config"
 	"github.com/levenlabs/dank/seaweed"
-	"crypto/aes"
-"crypto/cipher"
-"crypto/rand"
-	"encoding/base64"
-	"strings"
-	"fmt"
+	"github.com/levenlabs/go-llog"
 	"gopkg.in/vmihailenco/msgpack.v2"
 	"hash/crc32"
+	"strings"
 )
 
-type Signature struct {
-	Req *CompressedAssignRequest `msgpack:"r"`
-	SeaweedURL string `msgpack:"u"`
+type signature struct {
+	Req        *compressedAssignRequest `msgpack:"r"`
+	SeaweedURL string                   `msgpack:"u"`
+	// the CRC is of the filename of the AssignRequest
 	CRC uint32 `msgpack:"c"`
 }
 
@@ -35,6 +36,9 @@ func gcm() (cipher.AEAD, error) {
 	return cipher.NewGCM(b)
 }
 
+// encode returns an encrypted string signature for the given AssignRequest and
+// seaweed.AssignResult. It crc's the filename from the result and uses a gcm
+// cipher to encrypt the signature struct
 func encode(r *AssignRequest, ar *seaweed.AssignResult) (string, error) {
 	g, err := gcm()
 	if err != nil {
@@ -45,10 +49,10 @@ func encode(r *AssignRequest, ar *seaweed.AssignResult) (string, error) {
 		return "", err
 	}
 
-	sig := &Signature{
-		Req: r.Compress(),
-		SeaweedURL: ar.URL,
-		CRC: crc32.ChecksumIEEE([]byte(ar.Filename())),
+	sig := &signature{
+		Req:        r.compress(),
+		SeaweedURL: ar.URL(),
+		CRC:        crc32.ChecksumIEEE([]byte(ar.Filename())),
 	}
 	b, err := msgpack.Marshal(sig)
 	if err != nil {
@@ -62,6 +66,10 @@ func encode(r *AssignRequest, ar *seaweed.AssignResult) (string, error) {
 	return res, nil
 }
 
+// decode takes the encrypted string signature from encode and the filename
+// and validates that the filename matches the one originally sent to encode.
+// It returns the original AssignRequest and a new seaweed.AssignResult that can
+// be used to upload the file
 func decode(s string, f string) (*AssignRequest, *seaweed.AssignResult, error) {
 	parts := strings.Split(s, "$")
 	if len(parts) != 3 || parts[0] != "1" {
@@ -84,7 +92,7 @@ func decode(s string, f string) (*AssignRequest, *seaweed.AssignResult, error) {
 		return nil, nil, err
 	}
 
-	sig := &Signature{}
+	sig := &signature{}
 	err = msgpack.Unmarshal(v, sig)
 	if err != nil {
 		return nil, nil, err
@@ -92,8 +100,8 @@ func decode(s string, f string) (*AssignRequest, *seaweed.AssignResult, error) {
 
 	ar, err := seaweed.NewResult(sig.SeaweedURL, f)
 	if err != nil || crc32.ChecksumIEEE([]byte(ar.Filename())) != sig.CRC {
-		return nil, nil, fmt.Errorf("unauthorized filname sent")
+		return nil, nil, fmt.Errorf("unauthorized filename sent")
 	}
 
-	return sig.Req.Decompress(), ar, nil
+	return sig.Req.decompress(), ar, nil
 }

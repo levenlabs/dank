@@ -3,15 +3,15 @@ package upload
 import (
 	. "testing"
 
+	"encoding/base64"
+	"fmt"
+	"github.com/levenlabs/dank/seaweed"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/levenlabs/dank/seaweed"
-"fmt"
-	"encoding/base64"
 )
 
 func TestEncodeDecode(t *T) {
-	r := &AssignRequest{"image", 1024}
+	r := &AssignRequest{"image", 1024, ""}
 	fid := base64.URLEncoding.EncodeToString([]byte("hello"))
 	f := fid + ".jpg"
 	ar, err := seaweed.NewResult("localhost:8080", f)

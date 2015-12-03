@@ -7,14 +7,25 @@ var fileTypes = []string{
 	"image",
 }
 
+// AssignRequest encompasses the fields optionally used to validate an upload
+// before passing it onto seaweed. Current this only contains type and size
+// but could later contain min image resolution, song duration, etc
 type AssignRequest struct {
+	// Currently only a FileType of "image" is supported
 	FileType string `json:"type" mapstructure:"type" validate:"validType"`
-	MaxSize  int `json:"maxSize" mapstructure:"maxSize" validate:"min=0"`
+
+	// The maximum number of bytes that the uploaded file can be
+	MaxSize int64 `json:"maxSize" mapstructure:"maxSize" validate:"min=0"`
+
+	// Replication is not used in dank and is just forwarded onto seaweedfs
+	Replication string `json:"-" mapstructure:"replication"`
 }
 
-type CompressedAssignRequest struct {
-	FileTypeIndex int `msgpack:"i"`
-	MaxSize       int `msgpack:"s"`
+// compressedAssignRequest is just a compressed version of the AssignRequest
+// that is used in the signature in order to make it smaller
+type compressedAssignRequest struct {
+	FileTypeIndex int   `msgpack:"i"`
+	MaxSize       int64 `msgpack:"s"`
 }
 
 func init() {
@@ -41,20 +52,22 @@ func validateType(v interface{}, _ string) error {
 	return nil
 }
 
-func (r AssignRequest) Compress() *CompressedAssignRequest {
-	return &CompressedAssignRequest{
+// compress turns a AssignRequest into a compressedAssignRequest
+func (r AssignRequest) compress() *compressedAssignRequest {
+	return &compressedAssignRequest{
 		FileTypeIndex: stringTypeToIndex(r.FileType),
-		MaxSize: r.MaxSize,
+		MaxSize:       r.MaxSize,
 	}
 }
 
-func (r CompressedAssignRequest) Decompress() *AssignRequest {
+// decompress turns a compressedAssignRequest into a decompress
+func (r compressedAssignRequest) decompress() *AssignRequest {
 	t := ""
 	if r.FileTypeIndex > 0 && r.FileTypeIndex < len(fileTypes) {
 		t = fileTypes[r.FileTypeIndex]
 	}
 	return &AssignRequest{
 		FileType: t,
-		MaxSize: r.MaxSize,
+		MaxSize:  r.MaxSize,
 	}
 }

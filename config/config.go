@@ -8,11 +8,11 @@ import (
 
 // All possible configurable variables
 var (
-	ListenAddr string
-	SeaweedAddr  string
-	Secret string
-	SkyAPIAddr string
-	LogLevel   string
+	ListenAddr  string
+	SeaweedAddr string
+	Secret      string
+	SkyAPIAddr  string
+	LogLevel    string
 )
 
 func init() {

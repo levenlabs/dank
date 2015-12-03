@@ -1,116 +1,108 @@
 package http
+
 import (
-	. "net/http"
-	"fmt"
-	"github.com/levenlabs/dank/upload"
-	"github.com/levenlabs/dank/seaweed"
-	"github.com/mitchellh/mapstructure"
-	"reflect"
 	"bitbucket.org/levenlabs/validator"
-	"encoding/json"
-	"io/ioutil"
+	"fmt"
+	"github.com/mitchellh/mapstructure"
+	. "net/http"
+	"reflect"
+	"strings"
 )
 
-func init() {
-	HandleFunc("/get", wrapHandler(getHandler))
-	HandleFunc("/upload", wrapHandler(uploadHandler))
-	HandleFunc("/assign", wrapHandler(assignHandler))
-	HandleFunc("/verify", wrapHandler(verifyHandler))
+var typeOfResponseWriter = reflect.TypeOf(ResponseWriter(nil)).Elem()
+var typeOfRequest = reflect.TypeOf((*Request)(nil)).Elem()
+var typeOfInt = reflect.TypeOf(int(0)).Elem()
+var typeOfError = reflect.TypeOf(error(nil)).Elem()
+
+func methodInList(m string, l []string) bool {
+	for _, v := range l {
+		if v == m {
+			return true
+		}
+	}
+	return false
 }
 
-type GetArgs struct {
-	Filename string `json:"filename" mapstructure:"filename" validate:"nonzero"`
-}
-
-func getHandler(w ResponseWriter, r *Request, args *GetArgs) {
-	if !requireMethod("GET", w, r) {
-		return
+// wrapHandler takes a handler function and for each request, it rejects
+// unaccepted methods, converts the query args to the function's args pointer
+// and then validates those args.
+//
+// If the method returns a non-nil error, then the error is returned if its an
+// instance of PublicError, otherwise a generic "Internal Error" is sent back
+// to the client. If a status code of 0 is returned, then if error is nil, a 500
+// is sent and otherwise a 200 is sent.
+func WrapHandler(f interface{}, methods ...string) func(ResponseWriter, *Request) {
+	fnVal := reflect.ValueOf(f)
+	if fnVal.Kind() != reflect.Func {
+		panic("http: invalid func passed to wrapHandler")
 	}
-	//todo: support /get/filname.jpg additionally to ease nginx proxying
-	//todo: copy headers from seaweed?
-	err := seaweed.Get(args.Filename, w)
-	if err != nil {
-		writeErrorf(w, StatusInternalServerError, "internal error")
-		return
+	fnType := reflect.TypeOf(f)
+	if fnType.NumIn() != 3 {
+		panic("http: invalid number of args in funcs passed to wrapHandler")
 	}
-}
-
-func uploadHandler(w ResponseWriter, r *Request, args *upload.Assignment) {
-	if !requireMethod("POST", w, r) {
-		return
+	if fnType.NumOut() != 2 {
+		panic("http: invalid number of returns in funcs passed to wrapHandler")
 	}
-	//todo: handle form uploads
-	f, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		writeErrorf(w, StatusInternalServerError, "internal error")
-		return
+	if fnType.In(0).Elem() != typeOfResponseWriter {
+		panic("http: invalid 1st arg in func passed to wrapHandler")
 	}
-	err = upload.Upload(args, f)
-	if err != nil {
-		writeErrorf(w, StatusInternalServerError, "internal error")
-		return
+	if fnType.In(1).Elem() != typeOfRequest {
+		panic("http: invalid 2nd arg in func passed to wrapHandler")
 	}
-	return
-}
-
-func assignHandler(w ResponseWriter, r *Request, args *upload.AssignRequest) {
-	if !requireMethod("GET", w, r) {
-		return
+	argsType := fnType.In(2).Elem()
+	if argsType.Kind() != reflect.Ptr {
+		panic("http: invalid 3rd arg in func passed to wrapHandler")
 	}
-	a, err := upload.Assign(args)
-	if err != nil {
-		writeErrorf(w, StatusInternalServerError, "internal error")
-		return
+	if fnType.Out(0).Elem() != typeOfInt {
+		panic("http: invalid 1st return in func passed to wrapHandler")
 	}
-	js, err := json.Marshal(a)
-	if err != nil {
-		writeErrorf(w, StatusInternalServerError, "json marshal error")
-		return
+	if fnType.Out(1).Elem() != typeOfError {
+		panic("http: invalid 2nd return in func passed to wrapHandler")
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(js)
-}
-
-func verifyHandler(w ResponseWriter, r *Request, args *upload.Assignment) {
-	if !requireMethod("GET", w, r) {
-		return
-	}
-	err := upload.Verify(args)
-	if err != nil {
-		writeErrorf(w, StatusBadRequest, "invalid filename sent %s", err.Error())
-		return
-	}
-	return
-}
-
-func wrapHandler(fn func (ResponseWriter, *Request, interface{})) func(ResponseWriter, *Request) {
-	argsType := reflect.TypeOf(fn).In(2).Elem()
 	return func(w ResponseWriter, r *Request) {
-		args := reflect.New(argsType).Interface()
-		err := mapstructure.Decode(r.URL.Query(), args)
+		var code int
+		var err error
+		// first check the method
+		if !methodInList(r.Method, methods) {
+			code = StatusMethodNotAllowed
+			err = fmt.Errorf(
+				"http: %s method required, received %s",
+				strings.Join(methods, ","),
+				r.Method,
+			)
+		} else {
+			args := reflect.New(argsType)
+			argsi := args.Interface()
+			err = mapstructure.Decode(r.URL.Query(), argsi)
+			if err == nil {
+				err = validator.Validate(argsi)
+			}
+			// if we ran into error with validate or mapstructure, invalid args
+			if err != nil {
+				code = StatusBadRequest
+				err = fmt.Errorf("invalid arguments sent: %s", err.Error())
+			} else {
+				//returns (int, error)
+				resVals := fnVal.Call([]reflect.Value{
+					reflect.ValueOf(w),
+					reflect.ValueOf(r),
+					args,
+				})
+				code = int(resVals[0].Int())
+				if errInter := resVals[1].Interface(); errInter != nil {
+					err = errInter.(error)
+				}
+			}
+		}
 		if err != nil {
-			writeErrorf(w, StatusBadRequest, "http: invalid arguments sent %s", err.Error())
+			//todo: look for public errors
+			if code == 0 {
+				code = StatusInternalServerError
+			}
+			w.WriteHeader(code)
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			fmt.Fprint(w, "http: ", err.Error())
 			return
 		}
-		err = validator.Validate(args)
-		if err != nil {
-			writeErrorf(w, StatusBadRequest, "http: invalid arguments sent %s", err.Error())
-			return
-		}
-		fn(w, r, args)
 	}
-}
-
-func requireMethod(m string, w ResponseWriter, r *Request) bool {
-	if r.Method != m {
-		writeErrorf(w, StatusMethodNotAllowed, "http: %s method required, received %s", m, r.Method)
-		return false
-	}
-	return true
-}
-
-func writeErrorf(w ResponseWriter, status int, msg string, args ...interface{}) {
-	w.WriteHeader(status)
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	fmt.Fprint(w, fmt.Sprintf(msg, args...))
 }

@@ -1,0 +1,91 @@
+# dank
+
+dank is a service that wraps [seaweedfs](https://github.com/chrislusf/seaweedfs)
+and provides a way for a service to offer uploads to public clients. An `assign`
+request returns a signature that must then be sent with the `upload` request
+in order to validate the upload and prevent users from overwriting files they
+shouldn't be able to. The signature is intended to be one-time-use-only but
+nothing is guaranteeing that (yet).
+
+All the methods should be accessed via HTTP and arguments should be sent as
+query parameters. The one exception is `get` which accepts the `filename` as a
+query argument or in the path.
+
+In order to run dank you need an existing instance of seaweedfs running. When
+starting dank, pass the address to the seaweed master to `--seaweed-addr`.
+Additionally, you must create a secret (of exactly 16 characters) that will be
+used to sign the signatures and pass that as `--secret`. This secret can be
+rotated as frequently as you like. Finally, the listen address can be changed
+via `--listen-addr`, dank can advertise itself to a skydns instance using 
+[skyapi](https://github.com/mediocregopher/skyapi) and passing the address to
+`--skyapi-addr`, and the log level can be adjusted with `--log-level`.
+
+## Upload Requirements
+
+Currently only `fileType` and `maxSize` are offered as supported requirements.
+Later, `duration`, `size`, and others will be provided for many different types.
+The only supported `fileType` is `image`. To determine if a blob of data is an
+image it is passed though [image.Decode](https://golang.org/pkg/image/#Decode).
+
+## Methods
+
+### GET /get
+
+Returns the file associated with the given filename. Optionally the filename can
+be passed in the path as a folder under `/get`. This is to aide in people using
+nginx in front of dank. Returns 200 if the file exists.
+
+Params: `filename`
+
+Example:
+```
+GET /get?filename=cats.jpg
+```
+```
+GET /get/cats.jpg
+```
+
+### GET /assign
+
+Returns a signature and filename that can be passed to `/upload` in order to
+upload a new file. This method accepts upload requirements that will be used to
+verify the file later passed to `/upload`. The file type and size are optional
+and if they are not sent, no validation is performed. Additionally, a
+replication option can be sent and is passed directly onto seaweedfs. Returns a
+JSON body and 200 if a filename was assigned.
+
+Params: `type`, `maxSize`, `replication`
+
+Example:
+```
+GET /assign?type=image&maxSize=262144
+{"sig": "abcdefabcdef", "filename": "abcdabcd"}
+```
+
+### POST /upload
+
+Uploads a file to the given filename in seaweedfs. Before uploading, it
+validates the body to the orignal requirements passed to the `/assign` call.
+It should be noted that the file extension is ignored and must be stored
+separately. Returns 200 if the file was uploaded successfully.
+
+Params: `sig`, `filename`
+
+Example:
+```
+POST /assign?sig=abcdefabcdef&filename=abcdabcd
+... file contents ...
+```
+
+### GET /verify
+
+Verifies the given signature to the filename. This should be used when updating
+a client-given filename in the database to verify that they have the rights to
+upload/view that filename. Returns 200 if it is valid and otherwise returns 400. 
+
+Params: `sig`, `filename`
+
+Example:
+```
+GET /verify?sig=abcdefabcdef&filename=abcdabcd
+```
