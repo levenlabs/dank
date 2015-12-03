@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestEncodeDecode(t *T) {
+func TestVerify(t *T) {
 	r := &AssignRequest{"image", 1024, "", ""}
 	fid := base64.URLEncoding.EncodeToString([]byte("hello"))
 	f := fid + ".jpg"
@@ -19,9 +19,10 @@ func TestEncodeDecode(t *T) {
 	str, err := encode(r, ar)
 	require.Nil(t, err)
 
-	r2, ar2, err := decode(str, f)
-	require.Nil(t, err)
-
-	assert.EqualValues(t, r, r2)
-	assert.EqualValues(t, ar, ar2)
+	a := &Assignment{
+		Signature: str,
+		Filename:  f,
+	}
+	err = Verify(a)
+	assert.Nil(t, err)
 }

@@ -69,7 +69,11 @@ validates the body to the orignal requirements passed to the `/assign` call.
 It should be noted that the file extension is ignored and must be stored
 separately. Returns 200 if the file was uploaded successfully.
 
-Params: `sig`, `filename`
+If you're using a form to submit the request, you must either pass `formKey`
+with the name of the input element or make the name `file`. The params should
+still be sent as query parameters in the url even if you're submitting a form.
+
+Params: `sig`, `filename`, `formKey`
 
 Example:
 ```

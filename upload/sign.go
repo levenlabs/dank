@@ -14,6 +14,9 @@ import (
 	"strings"
 )
 
+//todo: RawURLEncoding
+var encoder = base64.URLEncoding
+
 type signature struct {
 	Req        *compressedAssignRequest `msgpack:"r"`
 	SeaweedURL string                   `msgpack:"u"`
@@ -40,12 +43,19 @@ func gcm() (cipher.AEAD, error) {
 // seaweed.AssignResult. It crc's the filename from the result and uses a gcm
 // cipher to encrypt the signature struct
 func encode(r *AssignRequest, ar *seaweed.AssignResult) (string, error) {
+	kv := llog.KV{
+		"filename": ar.Filename(),
+	}
 	g, err := gcm()
 	if err != nil {
+		kv["error"] = err
+		llog.Error("error creating gcm", kv)
 		return "", err
 	}
 	nonce := make([]byte, g.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
+		kv["error"] = err
+		llog.Error("error filling nonce", kv)
 		return "", err
 	}
 
@@ -56,12 +66,14 @@ func encode(r *AssignRequest, ar *seaweed.AssignResult) (string, error) {
 	}
 	b, err := msgpack.Marshal(sig)
 	if err != nil {
+		kv["error"] = err
+		llog.Error("error marshaling msgpack", kv)
 		return "", err
 	}
 	res := strings.Join([]string{
 		"1",
-		base64.StdEncoding.EncodeToString(nonce),
-		base64.StdEncoding.EncodeToString(g.Seal(nil, nonce, b, nil)),
+		encoder.EncodeToString(nonce),
+		encoder.EncodeToString(g.Seal(nil, nonce, b, nil)),
 	}, "$")
 	return res, nil
 }
@@ -71,20 +83,31 @@ func encode(r *AssignRequest, ar *seaweed.AssignResult) (string, error) {
 // It returns the original AssignRequest and a new seaweed.AssignResult that can
 // be used to upload the file
 func decode(s string, f string) (*AssignRequest, *seaweed.AssignResult, error) {
+	kv := llog.KV{
+		"string": s,
+	}
 	parts := strings.Split(s, "$")
 	if len(parts) != 3 || parts[0] != "1" {
+		kv["len"] = len(parts)
+		llog.Debug("number of parts was invalid", kv)
 		return nil, nil, fmt.Errorf("invalid signature")
 	}
-	nonce, err := base64.StdEncoding.DecodeString(parts[1])
+	nonce, err := encoder.DecodeString(parts[1])
 	if err != nil {
+		kv["error"] = err
+		llog.Debug("error base64 decoding signature part 1", kv)
 		return nil, nil, fmt.Errorf("invalid signature")
 	}
-	c, err := base64.StdEncoding.DecodeString(parts[2])
+	c, err := encoder.DecodeString(parts[2])
 	if err != nil {
+		kv["error"] = err
+		llog.Debug("error base64 decoding signature part 2", kv)
 		return nil, nil, fmt.Errorf("invalid signature")
 	}
 	g, err := gcm()
 	if err != nil {
+		kv["error"] = err
+		llog.Error("error creating gcm", kv)
 		return nil, nil, err
 	}
 	v, err := g.Open(nil, nonce, c, nil)
@@ -95,11 +118,18 @@ func decode(s string, f string) (*AssignRequest, *seaweed.AssignResult, error) {
 	sig := &signature{}
 	err = msgpack.Unmarshal(v, sig)
 	if err != nil {
+		kv["error"] = err
+		kv["string"] = v
+		llog.Error("error unmarshaling msgpack", kv)
 		return nil, nil, err
 	}
 
 	ar, err := seaweed.NewResult(sig.SeaweedURL, f)
 	if err != nil || crc32.ChecksumIEEE([]byte(ar.Filename())) != sig.CRC {
+		kv["error"] = err
+		kv["crc"] = sig.CRC
+		kv["filename"] = f
+		llog.Debug("error with checksum or filename", kv)
 		return nil, nil, fmt.Errorf("unauthorized filename sent")
 	}
 

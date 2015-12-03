@@ -1,6 +1,9 @@
 package upload
 
-import "gopkg.in/validator.v2"
+import (
+	"github.com/levenlabs/go-llog"
+	"gopkg.in/validator.v2"
+)
 
 var fileTypes = []string{
 	"",
@@ -18,14 +21,18 @@ type AssignRequest struct {
 	MaxSize int64 `json:"maxSize" mapstructure:"maxSize" validate:"min=0"`
 
 	// Replication is not used in dank and is just forwarded onto seaweedfs
-	Replication string `json:"-" mapstructure:"replication"`
+	Replication string `json:"replication" mapstructure:"replication"`
+
+	// TTL is stored and sent to seaweedfs in the assign and upload steps
+	TTL string `json:"ttl" mapstructure:"ttl"`
 }
 
 // compressedAssignRequest is just a compressed version of the AssignRequest
 // that is used in the signature in order to make it smaller
 type compressedAssignRequest struct {
-	FileTypeIndex int   `msgpack:"i"`
-	MaxSize       int64 `msgpack:"s"`
+	FileTypeIndex int    `msgpack:"i"`
+	MaxSize       int64  `msgpack:"s"`
+	TTL           string `msgpack:"t"`
 }
 
 func init() {
@@ -47,6 +54,9 @@ func validateType(v interface{}, _ string) error {
 		return validator.ErrUnsupported
 	}
 	if str != "" && stringTypeToIndex(str) == -1 {
+		llog.Warn("fileType was unknown", llog.KV{
+			"string": str,
+		})
 		return validator.ErrInvalid
 	}
 	return nil
@@ -57,6 +67,7 @@ func (r AssignRequest) compress() *compressedAssignRequest {
 	return &compressedAssignRequest{
 		FileTypeIndex: stringTypeToIndex(r.FileType),
 		MaxSize:       r.MaxSize,
+		TTL:           r.TTL,
 	}
 }
 
@@ -69,5 +80,6 @@ func (r compressedAssignRequest) decompress() *AssignRequest {
 	return &AssignRequest{
 		FileType: t,
 		MaxSize:  r.MaxSize,
+		TTL:      r.TTL,
 	}
 }
