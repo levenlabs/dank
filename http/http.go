@@ -121,13 +121,22 @@ func WrapHandler(f interface{}, methods ...string) func(ResponseWriter, *Request
 			}
 		}
 		if err != nil {
-			//todo: look for public errors
+			he, heOk := err.(HTTPError)
 			if code == 0 {
-				code = StatusInternalServerError
+				if heOk {
+					code = he.Code()
+				}
+				if code == 0 {
+					code = StatusInternalServerError
+				}
 			}
 			w.WriteHeader(code)
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			fmt.Fprint(w, err.Error())
+			if heOk {
+				fmt.Fprint(w, err.Error())
+			} else {
+				w.Write([]byte("internal error"))
+			}
 			kv["error"] = err
 		} else if code != 0 {
 			w.WriteHeader(code)

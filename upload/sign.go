@@ -5,6 +5,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"github.com/levenlabs/dank/config"
 	"github.com/levenlabs/dank/seaweed"
@@ -12,6 +13,7 @@ import (
 	"gopkg.in/vmihailenco/msgpack.v2"
 	"hash/crc32"
 	"strings"
+	"time"
 )
 
 //todo: RawURLEncoding
@@ -20,8 +22,12 @@ var encoder = base64.URLEncoding
 type signature struct {
 	Req        *compressedAssignRequest `msgpack:"r"`
 	SeaweedURL string                   `msgpack:"u"`
+
 	// the CRC is of the filename of the AssignRequest
 	CRC uint32 `msgpack:"c"`
+
+	// Expires represents the unix time that this expires
+	Expires int64 `msgpack:"e"`
 }
 
 func init() {
@@ -63,6 +69,7 @@ func encode(r *AssignRequest, ar *seaweed.AssignResult) (string, error) {
 		Req:        r.compress(),
 		SeaweedURL: ar.URL(),
 		CRC:        crc32.ChecksumIEEE([]byte(ar.Filename())),
+		Expires:    r.Expires(),
 	}
 	b, err := msgpack.Marshal(sig)
 	if err != nil {
@@ -90,19 +97,19 @@ func decode(s string, f string) (*AssignRequest, *seaweed.AssignResult, error) {
 	if len(parts) != 3 || parts[0] != "1" {
 		kv["len"] = len(parts)
 		llog.Debug("number of parts was invalid", kv)
-		return nil, nil, fmt.Errorf("invalid signature")
+		return nil, nil, errors.New("invalid signature")
 	}
 	nonce, err := encoder.DecodeString(parts[1])
 	if err != nil {
 		kv["error"] = err
 		llog.Debug("error base64 decoding signature part 1", kv)
-		return nil, nil, fmt.Errorf("invalid signature")
+		return nil, nil, err
 	}
 	c, err := encoder.DecodeString(parts[2])
 	if err != nil {
 		kv["error"] = err
 		llog.Debug("error base64 decoding signature part 2", kv)
-		return nil, nil, fmt.Errorf("invalid signature")
+		return nil, nil, err
 	}
 	g, err := gcm()
 	if err != nil {
@@ -122,6 +129,12 @@ func decode(s string, f string) (*AssignRequest, *seaweed.AssignResult, error) {
 		kv["string"] = v
 		llog.Error("error unmarshaling msgpack", kv)
 		return nil, nil, err
+	}
+
+	if sig.Expires > 0 && time.Now().UTC().Unix() > sig.Expires {
+		kv["expires"] = sig.Expires
+		llog.Debug("signature expired", kv)
+		return nil, nil, errors.New("signature expired")
 	}
 
 	ar, err := seaweed.NewResult(sig.SeaweedURL, f)

@@ -2,7 +2,7 @@ package upload
 
 import (
 	"bytes"
-	"fmt"
+	dhttp "github.com/levenlabs/dank/http"
 	"github.com/levenlabs/dank/seaweed"
 	"github.com/levenlabs/go-llog"
 	"image"
@@ -11,6 +11,7 @@ import (
 	_ "image/png"
 	"io"
 	"io/ioutil"
+	"net/http"
 )
 
 // Assignment holds a signature and a filename which are needed to upload a
@@ -38,6 +39,9 @@ func Assign(r *AssignRequest) (*Assignment, error) {
 		"filename": ar.Filename(),
 		"url":      ar.URL(),
 		"sig":      sig,
+		"maxSize":  r.MaxSize(),
+		"fileType": r.FileType,
+		"expires":  r.SigExpiresStr,
 	})
 
 	a := &Assignment{
@@ -56,25 +60,34 @@ func Assign(r *AssignRequest) (*Assignment, error) {
 func Upload(a *Assignment, body io.Reader, blen int64) error {
 	r, ar, err := decode(a.Signature, a.Filename)
 	if err != nil {
-		return err
-	}
-	if r.MaxSize > 0 {
-		if blen > r.MaxSize {
-			return fmt.Errorf("request too large")
-		}
-		body = io.LimitReader(body, r.MaxSize)
+		llog.Info("error running decode in upload", llog.KV{
+			"error":    err,
+			"filename": a.Filename,
+			"sig":      a.Signature,
+		})
+		return dhttp.NewError(http.StatusBadRequest, "invalid signature or filename")
 	}
 
+	maxSize := r.MaxSize()
 	kv := llog.KV{
 		"filename": ar.Filename(),
 		"len":      blen,
 		"fileType": r.FileType,
-		"maxSize":  r.MaxSize,
+		"maxSize":  maxSize,
 	}
 	if r.TTL != "" {
 		kv["ttl"] = r.TTL
 	}
 
+	llog.Debug("checking filesize", kv)
+	if maxSize > 0 {
+		if blen > maxSize {
+			return dhttp.NewError(http.StatusRequestEntityTooLarge, "request is larger than %d bytes", maxSize)
+		}
+		body = io.LimitReader(body, maxSize)
+	}
+
+	ok := true
 	switch r.FileType {
 	case "image":
 		var b []byte
@@ -82,7 +95,7 @@ func Upload(a *Assignment, body io.Reader, blen int64) error {
 		if err != nil {
 			kv["error"] = err
 			llog.Info("error running ioutil.ReadAll", kv)
-			return fmt.Errorf("invalid body uploaded")
+			return dhttp.NewError(http.StatusBadRequest, "invalid body uploaded")
 		}
 		_, _, err := image.Decode(bytes.NewBuffer(b))
 		if err != nil {
@@ -91,13 +104,17 @@ func Upload(a *Assignment, body io.Reader, blen int64) error {
 				kv["bytes"] = b[0:3]
 			}
 			llog.Info("error running image.Decode", kv)
-			return fmt.Errorf("invalid filetype uploaded")
+			ok = false
+		} else {
+			body = ioutil.NopCloser(bytes.NewBuffer(b))
 		}
+	}
 
+	if ok {
 		llog.Debug("validated image", kv)
-		body = ioutil.NopCloser(bytes.NewBuffer(b))
-	default:
-		llog.Debug("skipping body validation", kv)
+	} else {
+		return dhttp.NewError(http.StatusBadRequest,
+			"uploaded file could not be validated as %s", r.FileType)
 	}
 
 	return seaweed.Upload(ar, body, r.TTL)
@@ -107,7 +124,12 @@ func Upload(a *Assignment, body io.Reader, blen int64) error {
 func Verify(a *Assignment) error {
 	_, _, err := decode(a.Signature, a.Filename)
 	if err != nil {
-		return err
+		llog.Info("error running decode in upload", llog.KV{
+			"error":    err,
+			"filename": a.Filename,
+			"sig":      a.Signature,
+		})
+		return dhttp.NewError(http.StatusBadRequest, "invalid signature or filename")
 	}
 	return nil
 }

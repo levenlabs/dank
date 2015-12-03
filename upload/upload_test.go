@@ -10,7 +10,7 @@ import (
 )
 
 func TestVerify(t *T) {
-	r := &AssignRequest{"image", 1024, "", ""}
+	r := &AssignRequest{}
 	fid := base64.URLEncoding.EncodeToString([]byte("hello"))
 	f := fid + ".jpg"
 	ar, err := seaweed.NewResult("localhost:8080", f)

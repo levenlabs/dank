@@ -30,6 +30,7 @@ image it is passed though [image.Decode](https://golang.org/pkg/image/#Decode).
 ## Methods
 
 ### GET /get
+### GET /get/<filename>
 
 Returns the file associated with the given filename. Optionally the filename can
 be passed in the path as a folder under `/get`. This is to aide in people using
@@ -51,10 +52,13 @@ Returns a signature and filename that can be passed to `/upload` in order to
 upload a new file. This method accepts upload requirements that will be used to
 verify the file later passed to `/upload`. The file type and size are optional
 and if they are not sent, no validation is performed. Additionally, a
-replication option can be sent and is passed directly onto seaweedfs. Returns a
-JSON body and 200 if a filename was assigned.
+replication option can be sent and is passed directly onto seaweedfs. If you
+want to have the signature returned expire, send `sig_expires` with the number
+of seconds you want it to expire in. By default signatures don't expire.
 
-Params: `type`, `maxSize`, `replication`
+Returns a JSON body and 200 if a filename was assigned.
+
+Params: `type`, `max_size`, `replication`, `sig_expires`
 
 Example:
 ```
@@ -62,7 +66,7 @@ GET /assign?type=image&maxSize=262144
 {"sig": "abcdefabcdef", "filename": "abcdabcd"}
 ```
 
-### POST /upload
+### POST/PUT /upload
 
 Uploads a file to the given filename in seaweedfs. Before uploading, it
 validates the body to the orignal requirements passed to the `/assign` call.
@@ -73,7 +77,7 @@ If you're using a form to submit the request, you must either pass `formKey`
 with the name of the input element or make the name `file`. The params should
 still be sent as query parameters in the url even if you're submitting a form.
 
-Params: `sig`, `filename`, `formKey`
+Params: `sig`, `filename`, `form_key`
 
 Example:
 ```
@@ -92,4 +96,22 @@ Params: `sig`, `filename`
 Example:
 ```
 GET /verify?sig=abcdefabcdef&filename=abcdabcd
+```
+```
+
+### POST /delete
+### DELETE /delete/<filename>
+
+Deletes the given filename. Optionally you can send a `sig` to verify the
+signature matches the filename before deleting. If you pass an empty sig or pass
+no sig then no verification will be performed.
+
+Params: `filename`, `sig`
+
+Example:
+```
+POST /delete?sig=abcdefabcdef&filename=abcdabcd
+```
+```
+DELETE /delete/abcdabcd
 ```

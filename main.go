@@ -2,9 +2,8 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/levenlabs/dank/config"
-	dHttp "github.com/levenlabs/dank/http"
+	dhttp "github.com/levenlabs/dank/http"
 	"github.com/levenlabs/dank/seaweed"
 	"github.com/levenlabs/dank/upload"
 	"github.com/levenlabs/go-llog"
@@ -36,11 +35,13 @@ func main() {
 	}
 
 	// /get/ is needed to handle the filenames in the path
-	http.HandleFunc("/get/", dHttp.WrapHandler(getPathHandler, "GET"))
-	http.HandleFunc("/get", dHttp.WrapHandler(getHandler, "GET"))
-	http.HandleFunc("/assign", dHttp.WrapHandler(assignHandler, "GET"))
-	http.HandleFunc("/upload", dHttp.WrapHandler(uploadHandler, "POST"))
-	http.HandleFunc("/verify", dHttp.WrapHandler(verifyHandler, "GET"))
+	http.HandleFunc("/get/", dhttp.WrapHandler(getPathHandler, "GET"))
+	http.HandleFunc("/get", dhttp.WrapHandler(getHandler, "GET"))
+	http.HandleFunc("/assign", dhttp.WrapHandler(assignHandler, "GET"))
+	http.HandleFunc("/upload", dhttp.WrapHandler(uploadHandler, "POST", "PUT"))
+	http.HandleFunc("/verify", dhttp.WrapHandler(verifyHandler, "GET"))
+	http.HandleFunc("/delete", dhttp.WrapHandler(deleteHandler, "POST"))
+	http.HandleFunc("/delete/", dhttp.WrapHandler(deletePathHandler, "DELETE"))
 
 	llog.Info("starting http listening", llog.KV{"addr": addr})
 	err := http.ListenAndServe(addr, nil)
@@ -61,10 +62,18 @@ func getHandler(w http.ResponseWriter, r *http.Request, args *getArgs) (int, err
 	}
 
 	//todo: copy headers from seaweed?
-	err := seaweed.Get(args.Filename, w)
+	h, err := seaweed.Get(args.Filename, w)
 	if err != nil {
+		if err == seaweed.ErrorNotFound {
+			return 404, nil
+		}
 		kv["error"] = err
 		llog.Warn("error getting file", kv)
+	} else {
+		ct := h.Get("Content-Type")
+		if ct != "" {
+			w.Header().Set("Content-Type", ct)
+		}
 	}
 	return 0, err
 }
@@ -90,13 +99,14 @@ func assignHandler(w http.ResponseWriter, r *http.Request, args *upload.AssignRe
 	if err != nil {
 		kv["error"] = err
 		llog.Warn("error getting assign", kv)
-		return http.StatusInternalServerError, err
+		return 0, err
 	}
 	js, err := json.Marshal(a)
 	if err != nil {
 		kv["error"] = err
 		llog.Warn("error running json.Marshal for assign result", kv)
-		return http.StatusInternalServerError, err
+		// do not return the error to the client
+		return http.StatusInternalServerError, nil
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(js)
@@ -108,7 +118,7 @@ func assignHandler(w http.ResponseWriter, r *http.Request, args *upload.AssignRe
 type uploadArgs struct {
 	Signature string `json:"sig" mapstructure:"sig"  validate:"nonzero"`
 	Filename  string `json:"filename"  mapstructure:"filename" validate:"nonzero"`
-	FormKey   string `json:"formKey" mapstructure:"formKey"`
+	FormKey   string `json:"formKey" mapstructure:"form_key"`
 }
 
 func uploadHandler(w http.ResponseWriter, r *http.Request, args *uploadArgs) (int, error) {
@@ -137,7 +147,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, args *uploadArgs) (in
 			kv["key"] = args.FormKey
 			kv["error"] = err
 			llog.Warn("error getting the FormFile", kv)
-			return http.StatusBadRequest, fmt.Errorf("error reading form key: %s", err.Error())
+			return 0, dhttp.NewError(http.StatusBadRequest, "error reading form key: %s", err.Error())
 		}
 	}
 
@@ -159,8 +169,51 @@ func verifyHandler(w http.ResponseWriter, r *http.Request, args *upload.Assignme
 	llog.Debug("received request to verify", kv)
 
 	err := upload.Verify(args)
-	if err != nil {
-		return http.StatusBadRequest, fmt.Errorf("invalid filename sent: %s", err.Error())
+	return 0, err
+}
+
+type deleteArgs struct {
+	Signature string `json:"sig" mapstructure:"sig"`
+	Filename  string `json:"filename"  mapstructure:"filename"`
+}
+
+func deleteHandler(w http.ResponseWriter, r *http.Request, args *deleteArgs) (int, error) {
+	kv := rpcutil.RequestKV(r)
+	kv["filename"] = args.Filename
+	llog.Debug("received request to delete", kv)
+
+	if args.Filename == "" {
+		return 404, nil
 	}
-	return 0, nil
+
+	if args.Signature != "" {
+		err := upload.Verify(&upload.Assignment{
+			Signature: args.Signature,
+			Filename:  args.Filename,
+		})
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	err := seaweed.Delete(args.Filename)
+	if err != nil {
+		if err == seaweed.ErrorNotFound {
+			return 404, nil
+		}
+		kv["error"] = err
+		llog.Warn("error deleting file", kv)
+	}
+	return 0, err
+}
+
+func deletePathHandler(w http.ResponseWriter, r *http.Request, args *deleteArgs) (int, error) {
+	if args.Filename == "" {
+		p := strings.Split(r.URL.Path, "/")
+		if len(p) < 3 || p[2] == "" {
+			return 404, nil
+		}
+		args.Filename = p[2]
+	}
+	return deleteHandler(w, r, args)
 }
