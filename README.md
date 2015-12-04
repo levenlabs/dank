@@ -97,7 +97,6 @@ Example:
 ```
 GET /verify?sig=abcdefabcdef&filename=abcdabcd
 ```
-```
 
 ### POST /delete
 ### DELETE /delete/<filename>
