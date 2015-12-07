@@ -71,7 +71,9 @@ GET /assign?type=image&maxSize=262144
 Uploads a file to the given filename in seaweedfs. Before uploading, it
 validates the body to the orignal requirements passed to the `/assign` call.
 It should be noted that the file extension is ignored and must be stored
-separately. Returns 200 if the file was uploaded successfully.
+separately. Returns 200 if the file was uploaded successfully. This returns a
+JSON body with the filename that was uploaded and the Content-Type of the
+uploaded file, if one was given.
 
 If you're using a form to submit the request, you must either pass `formKey`
 with the name of the input element or make the name `file`. The params should
@@ -89,7 +91,8 @@ POST /upload?sig=abcdefabcdef&filename=abcdabcd
 
 Verifies the given signature to the filename. This should be used when updating
 a client-given filename in the database to verify that they have the rights to
-upload/view that filename. Returns 200 if it is valid and otherwise returns 400. 
+upload/view that filename. Returns 200 if it is valid and otherwise returns 400.
+This returns no body.
 
 Params: `sig`, `filename`
 
@@ -103,7 +106,7 @@ GET /verify?sig=abcdefabcdef&filename=abcdabcd
 
 Deletes the given filename. Optionally you can send a `sig` to verify the
 signature matches the filename before deleting. If you pass an empty sig or pass
-no sig then no verification will be performed.
+no sig then no verification will be performed. This returns no body.
 
 Params: `filename`, `sig`
 
