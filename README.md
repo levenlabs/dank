@@ -79,6 +79,9 @@ If you're using a form to submit the request, you must either pass `formKey`
 with the name of the input element or make the name `file`. The params should
 still be sent as query parameters in the url even if you're submitting a form.
 
+The `sig` is not guaranteed to be escaped when returned from `/assign` so make
+sure you URL encode it before sending it to `/upload`.
+
 Params: `sig`, `filename`, `form_key`
 
 Example:
@@ -94,6 +97,9 @@ a client-given filename in the database to verify that they have the rights to
 upload/view that filename. Returns 200 if it is valid and otherwise returns 400.
 This returns no body.
 
+The `sig` is not guaranteed to be escaped when returned from `/assign` so make
+sure you URL encode it before sending it to `/verify`.
+
 Params: `sig`, `filename`
 
 Example:
@@ -107,6 +113,9 @@ GET /verify?sig=abcdefabcdef&filename=abcdabcd
 Deletes the given filename. Optionally you can send a `sig` to verify the
 signature matches the filename before deleting. If you pass an empty sig or pass
 no sig then no verification will be performed. This returns no body.
+
+The `sig` is not guaranteed to be escaped when returned from `/assign` so make
+sure you URL encode it before sending it to `/delete`.
 
 Params: `filename`, `sig`
 
