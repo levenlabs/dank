@@ -13,6 +13,7 @@ import (
 	"mime"
 	"net/http"
 	"strings"
+	"mime/multipart"
 )
 
 func main() {
@@ -121,6 +122,11 @@ type uploadArgs struct {
 	FormKey   string `json:"formKey" mapstructure:"form_key"`
 }
 
+type uploadRes struct {
+	Filename string `json:"sig"`
+	ContentType string `json:"contentType"`
+}
+
 func uploadHandler(w http.ResponseWriter, r *http.Request, args *uploadArgs) (int, error) {
 	kv := rpcutil.RequestKV(r)
 	kv["length"] = r.ContentLength
@@ -142,13 +148,16 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, args *uploadArgs) (in
 			args.FormKey = "file"
 		}
 		llog.Debug("handling form-data", kv)
-		body, _, err = r.FormFile(args.FormKey)
+		var bh *multipart.FileHeader
+		body, bh, err = r.FormFile(args.FormKey)
 		if err != nil {
 			kv["key"] = args.FormKey
 			kv["error"] = err
 			llog.Warn("error getting the FormFile", kv)
 			return 0, dhttp.NewError(http.StatusBadRequest, "error reading form key: %s", err.Error())
 		}
+		bct := bh.Header.Get("Content-Type")
+		ct, _, _ = mime.ParseMediaType(bct)
 	}
 
 	a := &upload.Assignment{
@@ -159,7 +168,21 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, args *uploadArgs) (in
 	if err != nil {
 		kv["error"] = err
 		llog.Warn("error uploading file", kv)
+		return 0, err
 	}
+
+	js, err := json.Marshal(&uploadRes{
+		Filename: args.Filename,
+		ContentType: ct,
+	})
+	if err != nil {
+		kv["error"] = err
+		llog.Warn("error running json.Marshal for upload result", kv)
+		// do not return the error to the client
+		return http.StatusInternalServerError, nil
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(js)
 	return 0, err
 }
 

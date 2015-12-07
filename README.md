@@ -82,7 +82,7 @@ Params: `sig`, `filename`, `form_key`
 Example:
 ```
 POST /upload?sig=abcdefabcdef&filename=abcdabcd
-... file contents ...
+{"contentType": "image/png", "filename": "abcdabcd"}
 ```
 
 ### GET /verify
