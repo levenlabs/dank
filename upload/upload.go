@@ -35,7 +35,7 @@ func Assign(r *AssignRequest) (*Assignment, error) {
 		return nil, err
 	}
 
-	llog.Debug("created signature for file", llog.KV{
+	llog.Info("created signature for file", llog.KV{
 		"filename": ar.Filename(),
 		"url":      ar.URL(),
 		"sig":      sig,
@@ -111,7 +111,7 @@ func Upload(a *Assignment, body io.Reader, blen int64) error {
 	}
 
 	if ok {
-		llog.Debug("validated image", kv)
+		llog.Info("uploading file to seaweed", kv)
 	} else {
 		return dhttp.NewError(http.StatusBadRequest,
 			"uploaded file could not be validated as %s", r.FileType)
