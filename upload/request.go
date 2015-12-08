@@ -89,7 +89,7 @@ func (r AssignRequest) Expires() int64 {
 	if r.SigExpiresStr == "" || r.SigExpiresStr == "0" {
 		return 0
 	}
-	i, _ := strconv.ParseInt(r.MaxSizeStr, 10, 64)
+	i, _ := strconv.ParseInt(r.SigExpiresStr, 10, 64)
 	if i == 0 {
 		return 0
 	}
