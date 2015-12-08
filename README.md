@@ -27,6 +27,13 @@ Later, `duration`, `size`, and others will be provided for many different types.
 The only supported `fileType` is `image`. To determine if a blob of data is an
 image it is passed though [image.Decode](https://golang.org/pkg/image/#Decode).
 
+## Caching
+
+Whenever a file is uploaded, the current time is saved as the "Last-Modified"
+time. If you wish to send in a different time, pass `last_modified` to
+`/upload`. When a request is received, the `If-Modified-Since` header will be
+passed onto seaweedfs and that will check to see if its newer.
+
 ## Methods
 
 ### GET /get
@@ -82,7 +89,7 @@ still be sent as query parameters in the url even if you're submitting a form.
 The `sig` is not guaranteed to be escaped when returned from `/assign` so make
 sure you URL encode it before sending it to `/upload`.
 
-Params: `sig`, `filename`, `form_key`
+Params: `sig`, `filename`, `form_key`, `last_modified`
 
 Example:
 ```

@@ -11,9 +11,12 @@ import (
 	"github.com/levenlabs/golib/rpcutil"
 	"github.com/mediocregopher/skyapi/client"
 	"mime"
-	"net/http"
-	"strings"
 	"mime/multipart"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+	"io"
 )
 
 func main() {
@@ -53,6 +56,23 @@ type getArgs struct {
 	Filename string `json:"filename" mapstructure:"filename"`
 }
 
+var headersToSend = []string{
+	"If-Modified-Since",
+	"Accept",
+	"Accept-Encoding",
+	"Range",
+}
+
+var headersToCopy = []string{
+	"Content-Type",
+	"Last-Modified",
+	"Content-Encoding",
+	"Content-Length",
+	"Accept-Ranges",
+	"Expires",
+	"Cache-Control",
+}
+
 func getHandler(w http.ResponseWriter, r *http.Request, args *getArgs) (int, error) {
 	kv := rpcutil.RequestKV(r)
 	kv["filename"] = args.Filename
@@ -62,21 +82,45 @@ func getHandler(w http.ResponseWriter, r *http.Request, args *getArgs) (int, err
 		return 404, nil
 	}
 
-	//todo: copy headers from seaweed?
-	h, err := seaweed.Get(args.Filename, w)
+	hs := map[string]string{}
+	for _, n := range headersToSend {
+		v := r.Header.Get(n)
+		if v != "" {
+			hs[n] = v
+		}
+	}
+
+	up := r.URL.Query()
+	// don't pass on the filename param
+	if up.Get("filename") == args.Filename {
+		up.Del("filename")
+	}
+
+	body, h, err := seaweed.Get(args.Filename, hs, dhttp.FirstQueryVals(up))
 	if err != nil {
 		if err == seaweed.ErrorNotFound {
 			return 404, nil
 		}
 		kv["error"] = err
 		llog.Warn("error getting file", kv)
-	} else {
-		ct := h.Get("Content-Type")
-		if ct != "" {
-			w.Header().Set("Content-Type", ct)
+		return 0, err
+	}
+	for _, n := range headersToCopy {
+		v := h.Get(n)
+		if v != "" {
+			w.Header().Set(n, v)
 		}
 	}
-	return 0, err
+	if body != nil {
+		defer body.Close()
+
+		_, err = io.Copy(w, body)
+		if err != nil {
+			kv["error"] = err
+			llog.Error("error copying body to writer", kv)
+		}
+	}
+	return 0, nil
 }
 
 func getPathHandler(w http.ResponseWriter, r *http.Request, args *getArgs) (int, error) {
@@ -117,13 +161,14 @@ func assignHandler(w http.ResponseWriter, r *http.Request, args *upload.AssignRe
 // since mapstructure doesn't support embedded structs, copying these here from
 // upload.Assignment
 type uploadArgs struct {
-	Signature string `json:"sig" mapstructure:"sig"  validate:"nonzero"`
-	Filename  string `json:"filename"  mapstructure:"filename" validate:"nonzero"`
-	FormKey   string `json:"formKey" mapstructure:"form_key"`
+	Signature    string `json:"sig" mapstructure:"sig"  validate:"nonzero"`
+	Filename     string `json:"filename"  mapstructure:"filename" validate:"nonzero"`
+	LastModified string `json:"lastModified" mapstructure:"last_modified"`
+	FormKey      string `json:"formKey" mapstructure:"form_key"`
 }
 
 type uploadRes struct {
-	Filename string `json:"sig"`
+	Filename    string `json:"sig"`
 	ContentType string `json:"contentType"`
 }
 
@@ -164,7 +209,14 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, args *uploadArgs) (in
 		Signature: args.Signature,
 		Filename:  args.Filename,
 	}
-	err = upload.Upload(a, body, r.ContentLength)
+
+	if args.LastModified == "" {
+		args.LastModified = strconv.FormatInt(time.Now().Unix(), 10)
+	}
+	extra := map[string]string{
+		"ts": args.LastModified,
+	}
+	err = upload.Upload(a, body, r.ContentLength, ct, extra)
 	if err != nil {
 		kv["error"] = err
 		llog.Warn("error uploading file", kv)
@@ -172,7 +224,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, args *uploadArgs) (in
 	}
 
 	js, err := json.Marshal(&uploadRes{
-		Filename: args.Filename,
+		Filename:    args.Filename,
 		ContentType: ct,
 	})
 	if err != nil {

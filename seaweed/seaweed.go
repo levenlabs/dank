@@ -14,6 +14,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -95,22 +96,32 @@ func NewResult(u, filename string) (*AssignResult, error) {
 	}, nil
 }
 
-func doReq(req *http.Request, expectedCode int, kv llog.KV) (*http.Response, error) {
+// intInList determines if the int i is in the list l
+func intInList(i int, l []int) bool {
+	for _, v := range l {
+		if v == i {
+			return true
+		}
+	}
+	return false
+}
+
+func doReq(req *http.Request, kv llog.KV, expectedCodes ...int) (*http.Response, error) {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		kv["error"] = err
 		llog.Warn("error making seaweed http request", kv)
 		return nil, err
 	}
-	if err = handleResp(resp, expectedCode, kv); err != nil {
+	if err = handleResp(resp, kv, expectedCodes...); err != nil {
 		//return nil here since the handleResp closed the body already
 		return nil, err
 	}
 	return resp, nil
 }
 
-func handleResp(resp *http.Response, expectedCode int, kv llog.KV) error {
-	if resp.StatusCode != expectedCode {
+func handleResp(resp *http.Response, kv llog.KV, expectedCodes ...int) error {
+	if !intInList(resp.StatusCode, expectedCodes) {
 		defer resp.Body.Close()
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
@@ -163,7 +174,7 @@ func Assign(replication, ttl string) (*AssignResult, error) {
 		llog.Warn("error making seaweed http request", kv)
 		return nil, err
 	}
-	if err = handleResp(resp, http.StatusOK, kv); err != nil {
+	if err = handleResp(resp, kv, http.StatusOK); err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
@@ -181,7 +192,7 @@ func Assign(replication, ttl string) (*AssignResult, error) {
 // Upload takes an existing AssignResult call that has already been validated
 // and a io.Reader body. It uploads the body to the sent seaweed volume and
 // fid. Optionally it passes along a ttl to seaweed.
-func Upload(r *AssignResult, body io.Reader, ttl string) error {
+func Upload(r *AssignResult, body io.Reader, ct string, urlParams map[string]string) error {
 	u, err := url.Parse("http://" + r.url + "/" + r.fid)
 	if err != nil {
 		llog.Error("error building seaweed url", llog.KV{
@@ -190,11 +201,13 @@ func Upload(r *AssignResult, body io.Reader, ttl string) error {
 		})
 		return err
 	}
-	q := u.Query()
-	if ttl != "" {
-		q.Set("ttl", ttl)
+	if len(urlParams) > 0 {
+		q := u.Query()
+		for k, v := range urlParams {
+			q.Set(k, v)
+		}
+		u.RawQuery = q.Encode()
 	}
-	u.RawQuery = q.Encode()
 	uStr := u.String()
 	kv := llog.KV{
 		"url": uStr,
@@ -204,6 +217,7 @@ func Upload(r *AssignResult, body io.Reader, ttl string) error {
 	// we HAVE to upload a form the file in file
 	newBody := &bytes.Buffer{}
 	mpw := multipart.NewWriter(newBody)
+	//todo: use content-type
 	part, err := mpw.CreateFormFile("file", r.Filename())
 	if err != nil {
 		kv["error"] = err
@@ -232,7 +246,7 @@ func Upload(r *AssignResult, body io.Reader, ttl string) error {
 	}
 	req.Header.Add("Content-Type", mpw.FormDataContentType())
 	var resp *http.Response
-	if resp, err = doReq(req, http.StatusCreated, kv); err != nil {
+	if resp, err = doReq(req, kv, http.StatusCreated); err != nil {
 		return err
 	}
 	defer resp.Body.Close()
@@ -264,7 +278,7 @@ func lookup(filename string) (string, error) {
 		llog.Warn("error making seaweed http request", kv)
 		return "", err
 	}
-	if err = handleResp(resp, http.StatusOK, kv); err != nil {
+	if err = handleResp(resp, kv, http.StatusOK); err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
@@ -281,17 +295,37 @@ func lookup(filename string) (string, error) {
 	}
 	i := rand.Intn(len(r.Locations))
 	u := r.Locations[i].URL
-	uStr = "http://" + u + "/" + fid
+	uStr = "http://" + u + "/" + fid + filepath.Ext(filename)
 	return uStr, nil
 }
 
-// Get takes the given filename, gets the file from seaweed, and writes it to
-// the passed io.Writer
-func Get(filename string, w io.Writer) (*http.Header, error) {
+// Get takes the given filename, gets the file from seaweed, returns an
+// io.Reader you must close this io.Reader. The io.Reader might be nil if no
+// response was returned or there was an error.
+// You can also include headers HTTP headers to send along with the request
+// and url params
+func Get(filename string, headers, urlParams map[string]string) (io.ReadCloser, *http.Header, error) {
 	uStr, err := lookup(filename)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+
+	if len(urlParams) > 0 {
+		u, err := url.Parse(uStr)
+		if err != nil {
+			llog.Error("error building seaweed url", llog.KV{
+				"url": uStr,
+			})
+			return nil, nil, err
+		}
+		vals := u.Query()
+		for k, v := range urlParams {
+			vals.Set(k, v)
+		}
+		u.RawQuery = vals.Encode()
+		uStr = u.String()
+	}
+
 	kv := llog.KV{
 		"url":      uStr,
 		"filename": filename,
@@ -302,19 +336,20 @@ func Get(filename string, w io.Writer) (*http.Header, error) {
 	if err != nil {
 		kv["error"] = err
 		llog.Warn("error making seaweed http request", kv)
-		return nil, err
+		return nil, nil, err
 	}
-	if err = handleResp(resp, http.StatusOK, kv); err != nil {
-		return &resp.Header, err
+	for n, v := range headers {
+		resp.Header.Set(n, v)
 	}
-	defer resp.Body.Close()
+	if err = handleResp(resp, kv, http.StatusOK, http.StatusNotModified, http.StatusRequestedRangeNotSatisfiable); err != nil {
+		return nil, &resp.Header, err
+	}
 
-	_, err = io.Copy(w, resp.Body)
-	if err != nil {
-		kv["error"] = err
-		llog.Error("error copying body to writer", kv)
+	var r io.ReadCloser
+	if resp.StatusCode == http.StatusOK {
+		r = resp.Body
 	}
-	return &resp.Header, err
+	return r, &resp.Header, err
 }
 
 // Delete takes the given filename and deletes it from seaweed
@@ -336,7 +371,7 @@ func Delete(filename string) error {
 		return err
 	}
 	var resp *http.Response
-	if resp, err = doReq(req, http.StatusAccepted, kv); err != nil {
+	if resp, err = doReq(req, kv, http.StatusAccepted); err != nil {
 		return err
 	}
 	defer resp.Body.Close()

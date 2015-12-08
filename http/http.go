@@ -29,10 +29,9 @@ func strInList(m string, l []string) bool {
 	return false
 }
 
-// firstQueryVals takes a url and returns a map taking only the first value of
+// FirstQueryVals takes a url and returns a map taking only the first value of
 // each query param sent
-func firstQueryVals(u *url.URL) map[string]string {
-	m := u.Query()
+func FirstQueryVals(m url.Values) map[string]string {
 	dst := make(map[string]string)
 	for k, v := range m {
 		if len(v) > 0 {
@@ -98,7 +97,7 @@ func WrapHandler(f interface{}, methods ...string) func(ResponseWriter, *Request
 		} else {
 			args := reflect.New(argsElem)
 			argsi := args.Interface()
-			err = mapstructure.Decode(firstQueryVals(r.URL), argsi)
+			err = mapstructure.Decode(FirstQueryVals(r.URL.Query()), argsi)
 			if err == nil {
 				err = validator.Validate(argsi)
 			}

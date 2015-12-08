@@ -52,12 +52,14 @@ func Assign(r *AssignRequest) (*Assignment, error) {
 }
 
 // Upload takes an Assignment and a body and verifies that the body abides to
-// the original AssignRequest and then uploads the body to seaweed. len should
-// indicate the length of the body. This can be http.Request's ContentLength
+// the original AssignRequest and then uploads the body to seaweed. blen should
+// indicate the length of the body. This can be http.Request's ContentLength.
+// ct should indicate the content-type of the body
+// urlParams should contain extra information you want to pass along in url params
 //
 // If a MaxSize was specified in the original AssignRequest, then the body
 // io.Reader is only read until the MaxSize
-func Upload(a *Assignment, body io.Reader, blen int64) error {
+func Upload(a *Assignment, body io.Reader, blen int64, ct string, urlParams map[string]string) error {
 	r, ar, err := decode(a.Signature, a.Filename)
 	if err != nil {
 		llog.Info("error running decode in upload", llog.KV{
@@ -77,6 +79,10 @@ func Upload(a *Assignment, body io.Reader, blen int64) error {
 	}
 	if r.TTL != "" {
 		kv["ttl"] = r.TTL
+		if urlParams == nil {
+			urlParams = map[string]string{}
+		}
+		urlParams["ttl"] = r.TTL
 	}
 
 	llog.Debug("checking filesize", kv)
@@ -117,7 +123,7 @@ func Upload(a *Assignment, body io.Reader, blen int64) error {
 			"uploaded file could not be validated as %s", r.FileType)
 	}
 
-	return seaweed.Upload(ar, body, r.TTL)
+	return seaweed.Upload(ar, body, ct, urlParams)
 }
 
 // Verify takes an assignment and validates the filename to the signature
