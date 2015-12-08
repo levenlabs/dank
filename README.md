@@ -34,10 +34,12 @@ time. If you wish to send in a different time, pass `last_modified` to
 `/upload`. When a request is received, the `If-Modified-Since` header will be
 passed onto seaweedfs and that will check to see if its newer.
 
+For tips on running dank behind nginx see [NGINX.md](./NGINX.md).
+
 ## Methods
 
 ### GET /get
-### GET /get/<filename>
+### GET/HEAD /get/<filename>
 
 Returns the file associated with the given filename. Optionally the filename can
 be passed in the path as a folder under `/get`. This is to aide in people using
@@ -136,3 +138,8 @@ POST /delete?sig=abcdefabcdef&filename=abcdabcd
 ```
 DELETE /delete/abcdabcd
 ```
+
+## Todos
+
+* Support CORS requests
+* More tests

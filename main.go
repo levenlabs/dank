@@ -42,7 +42,7 @@ func main() {
 	}
 
 	// /get/ is needed to handle the filenames in the path
-	http.HandleFunc("/get/", dhttp.WrapHandler(getPathHandler, "GET"))
+	http.HandleFunc("/get/", dhttp.WrapHandler(getPathHandler, "GET", "HEAD"))
 	http.HandleFunc("/get", dhttp.WrapHandler(getHandler, "GET"))
 	http.HandleFunc("/assign", dhttp.WrapHandler(assignHandler, "GET"))
 	http.HandleFunc("/upload", dhttp.WrapHandler(uploadHandler, "POST", "PUT"))
@@ -79,18 +79,11 @@ var headersToCopy = []string{
 func getHandler(w http.ResponseWriter, r *http.Request, args *getArgs) (int, error) {
 	kv := rpcutil.RequestKV(r)
 	kv["filename"] = args.Filename
+	kv["method"] = r.Method
 	llog.Debug("received request to get", kv)
 
 	if args.Filename == "" {
 		return 404, nil
-	}
-
-	hs := map[string]string{}
-	for _, n := range headersToSend {
-		v := r.Header.Get(n)
-		if v != "" {
-			hs[n] = v
-		}
 	}
 
 	up := r.URL.Query()
@@ -99,7 +92,40 @@ func getHandler(w http.ResponseWriter, r *http.Request, args *getArgs) (int, err
 		up.Del("filename")
 	}
 
-	body, h, err := seaweed.Get(args.Filename, hs, dhttp.FirstQueryVals(up))
+	code := 200
+	urlParams := dhttp.FirstQueryVals(up)
+	var err error
+	var body io.ReadCloser
+	if r.Method == "HEAD" && r.Header.Get("X-Upstream-Redirect") != "" {
+		var surl string
+		surl, err = seaweed.Lookup(args.Filename, urlParams)
+		if err == nil {
+			w.Header().Set("Location", surl)
+			kv["url"] = surl
+			llog.Debug("returning location for upstream redirect", kv)
+			code = 307
+		}
+	} else {
+		hs := map[string]string{}
+		for _, n := range headersToSend {
+			v := r.Header.Get(n)
+			if v != "" {
+				hs[n] = v
+			}
+		}
+
+		var h *http.Header
+		body, h, err = seaweed.Get(args.Filename, hs, urlParams)
+		if err == nil {
+			for _, n := range headersToCopy {
+				v := h.Get(n)
+				if v != "" {
+					w.Header().Set(n, v)
+				}
+			}
+		}
+	}
+
 	if err != nil {
 		if err == seaweed.ErrorNotFound {
 			return 404, nil
@@ -108,22 +134,19 @@ func getHandler(w http.ResponseWriter, r *http.Request, args *getArgs) (int, err
 		llog.Warn("error getting file", kv)
 		return 0, err
 	}
-	for _, n := range headersToCopy {
-		v := h.Get(n)
-		if v != "" {
-			w.Header().Set(n, v)
-		}
-	}
+
 	if body != nil {
 		defer body.Close()
 
-		_, err = io.Copy(w, body)
-		if err != nil {
-			kv["error"] = err
-			llog.Error("error copying body to writer", kv)
+		if r.Method == "GET" {
+			_, err = io.Copy(w, body)
+			if err != nil {
+				kv["error"] = err
+				llog.Error("error copying body to writer", kv)
+			}
 		}
 	}
-	return 0, nil
+	return code, nil
 }
 
 func getPathHandler(w http.ResponseWriter, r *http.Request, args *getArgs) (int, error) {
@@ -179,6 +202,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, args *uploadArgs) (in
 	kv := rpcutil.RequestKV(r)
 	kv["length"] = r.ContentLength
 	kv["filename"] = args.Filename
+	kv["method"] = r.Method
 
 	ct := r.Header.Get("Content-Type")
 	kv["contentType"] = ct

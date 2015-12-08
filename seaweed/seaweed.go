@@ -253,7 +253,8 @@ func Upload(r *AssignResult, body io.Reader, ct string, urlParams map[string]str
 	return nil
 }
 
-func lookup(filename string) (string, error) {
+// Lookup takes a filename and returns the seaweed url needed to get that file
+func Lookup(filename string, urlParams map[string]string) (string, error) {
 	fid, err := decodeFilename(filename)
 	if err != nil {
 		llog.Error("error decoding filename in lookup", llog.KV{
@@ -296,6 +297,23 @@ func lookup(filename string) (string, error) {
 	i := rand.Intn(len(r.Locations))
 	u := r.Locations[i].URL
 	uStr = "http://" + u + "/" + fid + filepath.Ext(filename)
+
+	if len(urlParams) > 0 {
+		u, err := url.Parse(uStr)
+		if err != nil {
+			llog.Error("error building seaweed url", llog.KV{
+				"url": uStr,
+			})
+			return "", err
+		}
+		vals := u.Query()
+		for k, v := range urlParams {
+			vals.Set(k, v)
+		}
+		u.RawQuery = vals.Encode()
+		uStr = u.String()
+	}
+
 	return uStr, nil
 }
 
@@ -305,25 +323,9 @@ func lookup(filename string) (string, error) {
 // You can also include headers HTTP headers to send along with the request
 // and url params
 func Get(filename string, headers, urlParams map[string]string) (io.ReadCloser, *http.Header, error) {
-	uStr, err := lookup(filename)
+	uStr, err := Lookup(filename, urlParams)
 	if err != nil {
 		return nil, nil, err
-	}
-
-	if len(urlParams) > 0 {
-		u, err := url.Parse(uStr)
-		if err != nil {
-			llog.Error("error building seaweed url", llog.KV{
-				"url": uStr,
-			})
-			return nil, nil, err
-		}
-		vals := u.Query()
-		for k, v := range urlParams {
-			vals.Set(k, v)
-		}
-		u.RawQuery = vals.Encode()
-		uStr = u.String()
 	}
 
 	kv := llog.KV{
@@ -354,7 +356,7 @@ func Get(filename string, headers, urlParams map[string]string) (io.ReadCloser, 
 
 // Delete takes the given filename and deletes it from seaweed
 func Delete(filename string) error {
-	uStr, err := lookup(filename)
+	uStr, err := Lookup(filename, nil)
 	if err != nil {
 		return err
 	}
