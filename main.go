@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"github.com/levenlabs/dank/config"
 	dhttp "github.com/levenlabs/dank/http"
@@ -10,13 +11,15 @@ import (
 	"github.com/levenlabs/go-srvclient"
 	"github.com/levenlabs/golib/rpcutil"
 	"github.com/mediocregopher/skyapi/client"
+	"github.com/vincent-petithory/dataurl"
+	"io"
+	"io/ioutil"
 	"mime"
 	"mime/multipart"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
-	"io"
 )
 
 func main() {
@@ -168,7 +171,7 @@ type uploadArgs struct {
 }
 
 type uploadRes struct {
-	Filename    string `json:"sig"`
+	Filename    string `json:"filename"`
 	ContentType string `json:"contentType"`
 }
 
@@ -178,14 +181,15 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, args *uploadArgs) (in
 	kv["filename"] = args.Filename
 
 	ct := r.Header.Get("Content-Type")
-	// http/request.go's parsePostForm doesn't care about err so we shouldn't
-	ct, _, _ = mime.ParseMediaType(ct)
 	kv["contentType"] = ct
+	// http/request.go's parsePostForm doesn't care about err so we shouldn't
+	mt, _, _ := mime.ParseMediaType(ct)
+	kv["mimeType"] = mt
 	llog.Debug("received request to upload file", kv)
 
 	body := r.Body
 	var err error
-	switch ct {
+	switch mt {
 	case "application/x-www-form-urlencoded":
 		fallthrough
 	case "multipart/form-data":
@@ -201,8 +205,16 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, args *uploadArgs) (in
 			llog.Warn("error getting the FormFile", kv)
 			return 0, dhttp.NewError(http.StatusBadRequest, "error reading form key: %s", err.Error())
 		}
-		bct := bh.Header.Get("Content-Type")
-		ct, _, _ = mime.ParseMediaType(bct)
+		ct = bh.Header.Get("Content-Type")
+	case "application/data-url":
+		du, err := dataurl.Decode(body)
+		if err != nil {
+			kv["error"] = err
+			llog.Warn("error reading data-uri", kv)
+			return 0, dhttp.NewError(http.StatusBadRequest, "error reading data-uri: %s", err.Error())
+		}
+		ct = du.ContentType()
+		body = ioutil.NopCloser(bytes.NewReader(du.Data))
 	}
 
 	a := &upload.Assignment{

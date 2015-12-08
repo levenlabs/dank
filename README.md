@@ -85,6 +85,9 @@ uploaded file, if one was given.
 If you're using a form to submit the request, you must either pass `formKey`
 with the name of the input element or make the name `file`. The params should
 still be sent as query parameters in the url even if you're submitting a form.
+You can send a data URL, defined by [RFC 2397](http://tools.ietf.org/html/rfc2397),
+by sending a "Content-Type" of `application/data-url` with a body of the data
+URL.
 
 The `sig` is not guaranteed to be escaped when returned from `/assign` so make
 sure you URL encode it before sending it to `/upload`.
