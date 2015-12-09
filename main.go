@@ -127,9 +127,6 @@ func getHandler(w http.ResponseWriter, r *http.Request, args *getArgs) (int, err
 	}
 
 	if err != nil {
-		if err == seaweed.ErrorNotFound {
-			return 404, nil
-		}
 		kv["error"] = err
 		llog.Warn("error getting file", kv)
 		return 0, err
@@ -309,9 +306,6 @@ func deleteHandler(w http.ResponseWriter, r *http.Request, args *deleteArgs) (in
 
 	err := seaweed.Delete(args.Filename)
 	if err != nil {
-		if err == seaweed.ErrorNotFound {
-			return 404, nil
-		}
 		kv["error"] = err
 		llog.Warn("error deleting file", kv)
 	}

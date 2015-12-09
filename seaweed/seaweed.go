@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/levenlabs/dank/config"
+	dhttp "github.com/levenlabs/dank/http"
 	"github.com/levenlabs/go-llog"
 	"github.com/levenlabs/go-srvclient"
 	"io"
@@ -43,7 +44,6 @@ type location struct {
 
 //todo: RawURLEncoding
 var encoder = base64.URLEncoding
-var ErrorNotFound = errors.New("not found")
 
 func init() {
 	if config.SeaweedAddr == "" {
@@ -106,21 +106,21 @@ func intInList(i int, l []int) bool {
 	return false
 }
 
-func doReq(req *http.Request, kv llog.KV, expectedCodes ...int) (*http.Response, error) {
+func doReq(req *http.Request, kv llog.KV, expectedCodes ...int) (*http.Response, int, error) {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		kv["error"] = err
 		llog.Warn("error making seaweed http request", kv)
-		return nil, err
+		return nil, 0, err
 	}
-	if err = handleResp(resp, kv, expectedCodes...); err != nil {
+	if code, err := handleResp(resp, kv, expectedCodes...); err != nil {
 		//return nil here since the handleResp closed the body already
-		return nil, err
+		return nil, code, err
 	}
-	return resp, nil
+	return resp, resp.StatusCode, nil
 }
 
-func handleResp(resp *http.Response, kv llog.KV, expectedCodes ...int) error {
+func handleResp(resp *http.Response, kv llog.KV, expectedCodes ...int) (int, error) {
 	if !intInList(resp.StatusCode, expectedCodes) {
 		defer resp.Body.Close()
 		body, err := ioutil.ReadAll(resp.Body)
@@ -128,15 +128,10 @@ func handleResp(resp *http.Response, kv llog.KV, expectedCodes ...int) error {
 			kv["body"] = body
 		}
 		kv["status"] = resp.Status
-		// a not found status should just be debug since its somewhat expected
-		if resp.StatusCode == http.StatusNotFound {
-			llog.Debug("invalid seaweed status", kv)
-			return ErrorNotFound
-		}
 		llog.Warn("invalid seaweed status", kv)
-		return errors.New("unexpected seaweed status")
+		return resp.StatusCode, errors.New("unexpected seaweed status")
 	}
-	return nil
+	return resp.StatusCode, nil
 }
 
 // Assign makes an assign call to seaweed to get a filename that can be uploaded
@@ -174,7 +169,7 @@ func Assign(replication, ttl string) (*AssignResult, error) {
 		llog.Warn("error making seaweed http request", kv)
 		return nil, err
 	}
-	if err = handleResp(resp, kv, http.StatusOK); err != nil {
+	if _, err = handleResp(resp, kv, http.StatusOK); err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
@@ -246,7 +241,11 @@ func Upload(r *AssignResult, body io.Reader, ct string, urlParams map[string]str
 	}
 	req.Header.Add("Content-Type", mpw.FormDataContentType())
 	var resp *http.Response
-	if resp, err = doReq(req, kv, http.StatusCreated); err != nil {
+	var code int
+	if resp, code, err = doReq(req, kv, http.StatusCreated); err != nil {
+		if code == http.StatusNotFound {
+			err = dhttp.NewError(code, "filename not found: %s", r.Filename())
+		}
 		return err
 	}
 	defer resp.Body.Close()
@@ -259,7 +258,10 @@ func Lookup(filename string, urlParams map[string]string) (string, error) {
 	if err != nil {
 		llog.Error("error decoding filename in lookup", llog.KV{
 			"filename": filename,
+			"error": err,
 		})
+		err = dhttp.NewError(http.StatusBadRequest,
+			"invalid filename sent: %s", filename)
 		return "", err
 	}
 	//fid's format is volumeId,somestuff
@@ -279,7 +281,10 @@ func Lookup(filename string, urlParams map[string]string) (string, error) {
 		llog.Warn("error making seaweed http request", kv)
 		return "", err
 	}
-	if err = handleResp(resp, kv, http.StatusOK); err != nil {
+	if code, err := handleResp(resp, kv, http.StatusOK); err != nil {
+		if code == http.StatusNotFound {
+			err = dhttp.NewError(code, "filename not found: %s", filename)
+		}
 		return "", err
 	}
 	defer resp.Body.Close()
@@ -292,7 +297,9 @@ func Lookup(filename string, urlParams map[string]string) (string, error) {
 		return "", err
 	}
 	if len(r.Locations) == 0 {
-		return "", ErrorNotFound
+		err = dhttp.NewError(http.StatusNotFound,
+			"filname not found: %s", filename)
+		return "", err
 	}
 	i := rand.Intn(len(r.Locations))
 	u := r.Locations[i].URL
@@ -343,7 +350,10 @@ func Get(filename string, headers, urlParams map[string]string) (io.ReadCloser, 
 	for n, v := range headers {
 		resp.Header.Set(n, v)
 	}
-	if err = handleResp(resp, kv, http.StatusOK, http.StatusNotModified, http.StatusRequestedRangeNotSatisfiable); err != nil {
+	if code, err := handleResp(resp, kv, http.StatusOK, http.StatusNotModified, http.StatusRequestedRangeNotSatisfiable); err != nil {
+		if code == http.StatusNotFound {
+			err = dhttp.NewError(code, "filename not found: %s", filename)
+		}
 		return nil, &resp.Header, err
 	}
 
@@ -373,7 +383,11 @@ func Delete(filename string) error {
 		return err
 	}
 	var resp *http.Response
-	if resp, err = doReq(req, kv, http.StatusAccepted); err != nil {
+	var code int
+	if resp, code, err = doReq(req, kv, http.StatusAccepted); err != nil {
+		if code == http.StatusNotFound {
+			err = dhttp.NewError(code, "filename not found: %s", filename)
+		}
 		return err
 	}
 	defer resp.Body.Close()

@@ -19,6 +19,8 @@ var typeOfPtrRequest = reflect.TypeOf((*Request)(nil))
 var typeOfInt = reflect.TypeOf(int(0))
 var typeOfError = reflect.TypeOf((*error)(nil)).Elem()
 
+var internalError = []byte("internal error")
+
 // strInList determines if the string m is in the list l
 func strInList(m string, l []string) bool {
 	for _, v := range l {
@@ -131,10 +133,12 @@ func WrapHandler(f interface{}, methods ...string) func(ResponseWriter, *Request
 			}
 			w.WriteHeader(code)
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			if heOk {
-				fmt.Fprint(w, err.Error())
-			} else {
-				w.Write([]byte("internal error"))
+			if r.Method != "HEAD" {
+				if heOk {
+					fmt.Fprint(w, err.Error())
+				} else {
+					w.Write(internalError)
+				}
 			}
 			kv["error"] = err
 		} else if code != 0 {
