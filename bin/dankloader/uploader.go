@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 func main() {
@@ -23,9 +24,15 @@ func main() {
 		Description: "address:port of the dank instance to upload to",
 		Default:     "127.0.0.1:8333",
 	})
+	l.Add(lever.Param{
+		Name:        "--concurrent",
+		Description: "number of concurrent uploads",
+		Default:     "4",
+	})
 	l.Parse()
 
 	dankURL, _ := l.ParamStr("--dank-addr")
+	con, _ := l.ParamInt("--concurrent")
 
 	ac := len(os.Args)
 	if ac < 2 {
@@ -59,14 +66,26 @@ func main() {
 		files = []string{fName}
 	}
 
-	var nn string
-	for _, n := range files {
-		nn, err = makeDank(n, dankURL)
-		if err != nil {
-			log.Fatalf("error uploading %s: %s", n, err)
-		}
-		fmt.Printf("%s => %s\n", n, nn)
+	var wg sync.WaitGroup
+	ch := make(chan string)
+	for i := 0; i < con; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for f := range ch {
+				r, err := makeDank(f, dankURL)
+				if err != nil {
+					fmt.Printf("error uploading %s: %s", f, err)
+				}
+				fmt.Printf("%s => %s\n", f, r)
+			}
+		}()
 	}
+	for _, n := range files {
+		ch <- n
+	}
+	close(ch)
+	wg.Wait()
 }
 
 func makeDank(f, durl string) (string, error) {
