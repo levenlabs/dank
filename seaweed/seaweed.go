@@ -256,7 +256,7 @@ func Upload(r *AssignResult, body io.Reader, ct string, urlParams map[string]str
 func Lookup(filename string, urlParams map[string]string) (string, error) {
 	fid, err := decodeFilename(filename)
 	if err != nil {
-		llog.Error("error decoding filename in lookup", llog.KV{
+		llog.Warn("error decoding filename in lookup", llog.KV{
 			"filename": filename,
 			"error": err,
 		})
