@@ -36,6 +36,17 @@ passed onto seaweedfs and that will check to see if its newer.
 
 For tips on running dank behind nginx see [NGINX.md](./NGINX.md).
 
+## Client
+
+A client is included as `github.com/levenlabs/dank/dank-client` that exposes the
+`dank` package which contains various methods for uploading files with a dank
+instance.
+
+## dankloader
+
+The dankloader binary inside `bin/dankloader` can be used to upload files to
+dank via a simple bash command.
+
 ## Methods
 
 ### GET /get

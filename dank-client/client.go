@@ -1,3 +1,4 @@
+// The dank package provides a Client for interfacing with an instance of dank.
 package dank
 
 import (
