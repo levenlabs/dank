@@ -4,6 +4,7 @@ import (
 	"bytes"
 	dhttp "github.com/levenlabs/dank/http"
 	"github.com/levenlabs/dank/seaweed"
+	"github.com/levenlabs/dank/types"
 	"github.com/levenlabs/go-llog"
 	"image"
 	_ "image/gif"
@@ -14,17 +15,9 @@ import (
 	"net/http"
 )
 
-// Assignment holds a signature and a filename which are needed to upload a
-// file and validate it. Since mapstructure doesn't support embedded structs
-// we have to copy these to main.go's uploadArgs
-type Assignment struct {
-	Signature string `json:"sig" mapstructure:"sig"  validate:"nonzero"`
-	Filename  string `json:"filename"  mapstructure:"filename" validate:"nonzero"`
-}
-
 // Assign takes an AssignRequest and returns an Assignment that can be used to
 // upload a file later
-func Assign(r *AssignRequest) (*Assignment, error) {
+func Assign(r *types.AssignRequest) (*types.Assignment, error) {
 	ar, err := seaweed.Assign(r.Replication, r.TTL)
 	if err != nil {
 		return nil, err
@@ -44,7 +37,7 @@ func Assign(r *AssignRequest) (*Assignment, error) {
 		"expires":  r.SigExpiresStr,
 	})
 
-	a := &Assignment{
+	a := &types.Assignment{
 		Signature: sig,
 		Filename:  ar.Filename(),
 	}
@@ -59,7 +52,7 @@ func Assign(r *AssignRequest) (*Assignment, error) {
 //
 // If a MaxSize was specified in the original AssignRequest, then the body
 // io.Reader is only read until the MaxSize
-func Upload(a *Assignment, body io.Reader, blen int64, ct string, urlParams map[string]string) error {
+func Upload(a *types.Assignment, body io.Reader, blen int64, ct string, urlParams map[string]string) error {
 	r, ar, err := decode(a.Signature, a.Filename)
 	if err != nil {
 		llog.Info("error running decode in upload", llog.KV{
@@ -127,7 +120,7 @@ func Upload(a *Assignment, body io.Reader, blen int64, ct string, urlParams map[
 }
 
 // Verify takes an assignment and validates the filename to the signature
-func Verify(a *Assignment) error {
+func Verify(a *types.Assignment) error {
 	_, _, err := decode(a.Signature, a.Filename)
 	if err != nil {
 		llog.Info("error running decode in upload", llog.KV{

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/levenlabs/dank/config"
 	"github.com/levenlabs/dank/seaweed"
+	"github.com/levenlabs/dank/types"
 	"github.com/levenlabs/go-llog"
 	"gopkg.in/vmihailenco/msgpack.v2"
 	"hash/crc32"
@@ -48,7 +49,7 @@ func gcm() (cipher.AEAD, error) {
 // encode returns an encrypted string signature for the given AssignRequest and
 // seaweed.AssignResult. It crc's the filename from the result and uses a gcm
 // cipher to encrypt the signature struct
-func encode(r *AssignRequest, ar *seaweed.AssignResult) (string, error) {
+func encode(r *types.AssignRequest, ar *seaweed.AssignResult) (string, error) {
 	kv := llog.KV{
 		"filename": ar.Filename(),
 	}
@@ -66,8 +67,8 @@ func encode(r *AssignRequest, ar *seaweed.AssignResult) (string, error) {
 	}
 
 	sig := &signature{
-		Req:        r.compress(),
-		SeaweedURL: ar.URL(),
+		Req:        compressRequest(r),
+		SeaweedURL: ar.Host(),
 		CRC:        crc32.ChecksumIEEE([]byte(ar.Filename())),
 		Expires:    r.Expires(),
 	}
@@ -89,7 +90,7 @@ func encode(r *AssignRequest, ar *seaweed.AssignResult) (string, error) {
 // and validates that the filename matches the one originally sent to encode.
 // It returns the original AssignRequest and a new seaweed.AssignResult that can
 // be used to upload the file
-func decode(s string, f string) (*AssignRequest, *seaweed.AssignResult, error) {
+func decode(s string, f string) (*types.AssignRequest, *seaweed.AssignResult, error) {
 	kv := llog.KV{
 		"string": s,
 	}
@@ -137,7 +138,7 @@ func decode(s string, f string) (*AssignRequest, *seaweed.AssignResult, error) {
 		return nil, nil, errors.New("signature expired")
 	}
 
-	ar, err := seaweed.NewResult(sig.SeaweedURL, f)
+	ar, err := seaweed.NewAssignResult(sig.SeaweedURL, f)
 	if err != nil || crc32.ChecksumIEEE([]byte(ar.Filename())) != sig.CRC {
 		kv["error"] = err
 		kv["crc"] = sig.CRC

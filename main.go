@@ -7,6 +7,7 @@ import (
 	dhttp "github.com/levenlabs/dank/http"
 	"github.com/levenlabs/dank/seaweed"
 	"github.com/levenlabs/dank/upload"
+	"github.com/levenlabs/dank/types"
 	"github.com/levenlabs/go-llog"
 	"github.com/levenlabs/go-srvclient"
 	"github.com/levenlabs/golib/rpcutil"
@@ -157,7 +158,7 @@ func getPathHandler(w http.ResponseWriter, r *http.Request, args *getArgs) (int,
 	return getHandler(w, r, args)
 }
 
-func assignHandler(w http.ResponseWriter, r *http.Request, args *upload.AssignRequest) (int, error) {
+func assignHandler(w http.ResponseWriter, r *http.Request, args *types.AssignRequest) (int, error) {
 	kv := rpcutil.RequestKV(r)
 	kv["fileType"] = args.FileType
 	kv["maxSize"] = args.MaxSize
@@ -238,7 +239,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, args *uploadArgs) (in
 		body = ioutil.NopCloser(bytes.NewReader(du.Data))
 	}
 
-	a := &upload.Assignment{
+	a := &types.Assignment{
 		Signature: args.Signature,
 		Filename:  args.Filename,
 	}
@@ -271,7 +272,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, args *uploadArgs) (in
 	return 0, err
 }
 
-func verifyHandler(w http.ResponseWriter, r *http.Request, args *upload.Assignment) (int, error) {
+func verifyHandler(w http.ResponseWriter, r *http.Request, args *types.Assignment) (int, error) {
 	kv := rpcutil.RequestKV(r)
 	kv["filename"] = args.Filename
 	llog.Debug("received request to verify", kv)
@@ -295,7 +296,7 @@ func deleteHandler(w http.ResponseWriter, r *http.Request, args *deleteArgs) (in
 	}
 
 	if args.Signature != "" {
-		err := upload.Verify(&upload.Assignment{
+		err := upload.Verify(&types.Assignment{
 			Signature: args.Signature,
 			Filename:  args.Filename,
 		})

@@ -2,7 +2,6 @@ package seaweed
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"github.com/levenlabs/dank/config"
@@ -20,13 +19,6 @@ import (
 	"time"
 )
 
-// AssignResult holds the result of the assign call to seaweed. It exposes
-// two methods to get the Filename and the URL
-type AssignResult struct {
-	fid string
-	url string
-}
-
 // rawAssignResult is only used to Unmarshal into and then an AssignResult is
 // made to publicly return
 type rawAssignResult struct {
@@ -42,9 +34,6 @@ type location struct {
 	URL string `json:"url"`
 }
 
-//todo: RawURLEncoding
-var encoder = base64.URLEncoding
-
 func init() {
 	if config.SeaweedAddr == "" {
 		llog.Fatal("--seaweed-addr is required")
@@ -52,48 +41,9 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-// Returns the filename useful for uploading. It's base64-encoded to ensure url
-// acceptance and to hide any seaweed formatting
-func (r *AssignResult) Filename() string {
-	return encoder.EncodeToString([]byte(r.fid))
-}
-
-// Returns the host:port of the seaweed volume that contains this file. This is
-// only exposed for hiding this value in the signature
-func (r *AssignResult) URL() string {
-	return r.url
-}
-
 // assignResult returns a public AssignResult from a rawAssignResult
 func (r *rawAssignResult) assignResult() *AssignResult {
-	return &AssignResult{
-		fid: r.FID,
-		url: r.URL,
-	}
-}
-
-// decodes the filename and strips off any file extension and un-base64's the
-// filename to get the fid
-func decodeFilename(f string) (string, error) {
-	parts := strings.Split(f, ".")
-	fid, err := encoder.DecodeString(parts[0])
-	if err != nil {
-		return "", err
-	}
-	return string(fid), nil
-}
-
-// NewResult returns a AssignResult from a url and filename. This is used when
-// a signature is decoded
-func NewResult(u, filename string) (*AssignResult, error) {
-	fid, err := decodeFilename(filename)
-	if err != nil {
-		return nil, err
-	}
-	return &AssignResult{
-		fid: fid,
-		url: u,
-	}, nil
+	return NewRawAssignResult(r.URL, r.FID)
 }
 
 // intInList determines if the int i is in the list l
@@ -188,11 +138,10 @@ func Assign(replication, ttl string) (*AssignResult, error) {
 // and a io.Reader body. It uploads the body to the sent seaweed volume and
 // fid. Optionally it passes along a ttl to seaweed.
 func Upload(r *AssignResult, body io.Reader, ct string, urlParams map[string]string) error {
-	u, err := url.Parse("http://" + r.url + "/" + r.fid)
+	u, err := url.Parse(r.URL())
 	if err != nil {
 		llog.Error("error building seaweed url", llog.KV{
-			"url": r.url,
-			"fid": r.fid,
+			"url": r.URL(),
 		})
 		return err
 	}
@@ -254,7 +203,7 @@ func Upload(r *AssignResult, body io.Reader, ct string, urlParams map[string]str
 
 // Lookup takes a filename and returns the seaweed url needed to get that file
 func Lookup(filename string, urlParams map[string]string) (string, error) {
-	fid, err := decodeFilename(filename)
+	ar, err := NewAssignResult("", filename)
 	if err != nil {
 		llog.Warn("error decoding filename in lookup", llog.KV{
 			"filename": filename,
@@ -265,7 +214,7 @@ func Lookup(filename string, urlParams map[string]string) (string, error) {
 		return "", err
 	}
 	//fid's format is volumeId,somestuff
-	parts := strings.Split(fid, ",")
+	parts := strings.Split(ar.FID(), ",")
 	addr := srvclient.MaybeSRV(config.SeaweedAddr)
 	uStr := "http://" + addr + "/dir/lookup?volumeId=" + parts[0]
 
@@ -303,7 +252,7 @@ func Lookup(filename string, urlParams map[string]string) (string, error) {
 	}
 	i := rand.Intn(len(r.Locations))
 	u := r.Locations[i].URL
-	uStr = "http://" + u + "/" + fid + filepath.Ext(filename)
+	uStr = "http://" + u + "/" + ar.FID() + filepath.Ext(filename)
 
 	if len(urlParams) > 0 {
 		u, err := url.Parse(uStr)
