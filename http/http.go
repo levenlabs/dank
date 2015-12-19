@@ -90,12 +90,10 @@ func WrapHandler(f interface{}, methods ...string) func(ResponseWriter, *Request
 		var err error
 		// first check the method
 		if !strInList(r.Method, methods) {
-			code = StatusMethodNotAllowed
-			err = fmt.Errorf(
+			err = NewError(StatusMethodNotAllowed,
 				"http: %s method required, received %s",
 				strings.Join(methods, ","),
-				r.Method,
-			)
+				r.Method)
 		} else {
 			args := reflect.New(argsElem)
 			argsi := args.Interface()
@@ -106,7 +104,8 @@ func WrapHandler(f interface{}, methods ...string) func(ResponseWriter, *Request
 			// if we ran into error with validate or mapstructure, invalid args
 			if err != nil {
 				code = StatusBadRequest
-				err = fmt.Errorf("invalid arguments sent: %s", err.Error())
+				err = NewError(StatusBadRequest,
+					"invalid arguments sent: %s", err.Error())
 			} else {
 				// accepts (http.ResponseWriter, *http.Request, interface{})
 				// returns (int, error)
@@ -141,10 +140,11 @@ func WrapHandler(f interface{}, methods ...string) func(ResponseWriter, *Request
 				}
 			}
 			kv["error"] = err
+			llog.Warn("returning error to client", kv)
 		} else if code != 0 {
 			w.WriteHeader(code)
 		}
 		kv["code"] = code
-		llog.Debug("Responded to HTTP request", kv)
+		llog.Debug("responded to HTTP request", kv)
 	}
 }

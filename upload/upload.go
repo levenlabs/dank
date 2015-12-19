@@ -69,6 +69,7 @@ func Upload(a *types.Assignment, body io.Reader, blen int64, ct string, urlParam
 		"len":      blen,
 		"fileType": r.FileType,
 		"maxSize":  maxSize,
+		"contentType": ct,
 	}
 	if r.TTL != "" {
 		kv["ttl"] = r.TTL
