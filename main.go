@@ -198,7 +198,8 @@ type uploadRes struct {
 
 func uploadHandler(w http.ResponseWriter, r *http.Request, args *uploadArgs) (int, error) {
 	kv := rpcutil.RequestKV(r)
-	kv["length"] = r.ContentLength
+	cl := r.ContentLength
+	kv["length"] = cl
 	kv["filename"] = args.Filename
 	kv["method"] = r.Method
 
@@ -227,6 +228,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, args *uploadArgs) (in
 			llog.Warn("error getting the FormFile", kv)
 			return 0, dhttp.NewError(http.StatusBadRequest, "error reading form key: %s", err.Error())
 		}
+		//todo: calculate length
 		ct = bh.Header.Get("Content-Type")
 	case "application/data-url":
 		du, err := dataurl.Decode(body)
@@ -236,6 +238,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, args *uploadArgs) (in
 			return 0, dhttp.NewError(http.StatusBadRequest, "error reading data-uri: %s", err.Error())
 		}
 		ct = du.ContentType()
+		cl = int64(len(du.Data))
 		body = ioutil.NopCloser(bytes.NewReader(du.Data))
 	}
 
@@ -250,7 +253,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request, args *uploadArgs) (in
 	extra := map[string]string{
 		"ts": args.LastModified,
 	}
-	err = upload.Upload(a, body, r.ContentLength, ct, extra)
+	err = upload.Upload(a, body, cl, ct, extra)
 	if err != nil {
 		kv["error"] = err
 		llog.Warn("error uploading file", kv)

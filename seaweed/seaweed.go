@@ -74,8 +74,16 @@ func handleResp(resp *http.Response, kv llog.KV, expectedCodes ...int) (int, err
 	if !intInList(resp.StatusCode, expectedCodes) {
 		defer resp.Body.Close()
 		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			kv["body"] = body
+		if err == nil {
+			errBody := &struct{
+				Error string `json:"error"`
+			}{}
+			err = json.Unmarshal(body, errBody)
+			if err == nil {
+				kv["error"] = errBody.Error
+			} else {
+				kv["body"] = string(body)
+			}
 		}
 		kv["status"] = resp.Status
 		llog.Warn("invalid seaweed status", kv)
@@ -169,10 +177,14 @@ func Upload(r *AssignResult, body io.Reader, ct string, urlParams map[string]str
 		llog.Error("error creating multipart file", kv)
 		return err
 	}
-	_, err = io.Copy(part, body)
+	nb, err := io.Copy(part, body)
 	if err != nil {
 		kv["error"] = err
 		llog.Error("error copying body to multipart", kv)
+		return err
+	}
+	if nb < 1 {
+		llog.Error("empty body encountered", kv)
 		return err
 	}
 	err = mpw.Close()
