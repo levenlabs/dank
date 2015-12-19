@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/levenlabs/dank/config"
 	dhttp "github.com/levenlabs/dank/http"
 	"github.com/levenlabs/go-llog"
@@ -13,8 +14,10 @@ import (
 	"math/rand"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -75,7 +78,7 @@ func handleResp(resp *http.Response, kv llog.KV, expectedCodes ...int) (int, err
 		defer resp.Body.Close()
 		body, err := ioutil.ReadAll(resp.Body)
 		if err == nil {
-			errBody := &struct{
+			errBody := &struct {
 				Error string `json:"error"`
 			}{}
 			err = json.Unmarshal(body, errBody)
@@ -142,6 +145,19 @@ func Assign(replication, ttl string) (*AssignResult, error) {
 	return r.assignResult(), nil
 }
 
+// createFormFile is multipart.Writer.CreateFormFile but it accepts mimetype
+func createFormFile(w *multipart.Writer, fieldname, filename, ct string) (io.Writer, error) {
+	h := make(textproto.MIMEHeader)
+	h.Set("Content-Disposition",
+		fmt.Sprintf(`form-data; name=%s; filename=%s`,
+			strconv.Quote(fieldname), strconv.Quote(filename)))
+	if ct == "" {
+		ct = "application/octet-stream"
+	}
+	h.Set("Content-Type", ct)
+	return w.CreatePart(h)
+}
+
 // Upload takes an existing AssignResult call that has already been validated
 // and a io.Reader body. It uploads the body to the sent seaweed volume and
 // fid. Optionally it passes along a ttl to seaweed.
@@ -169,8 +185,7 @@ func Upload(r *AssignResult, body io.Reader, ct string, urlParams map[string]str
 	// we HAVE to upload a form the file in file
 	newBody := &bytes.Buffer{}
 	mpw := multipart.NewWriter(newBody)
-	//todo: use content-type
-	part, err := mpw.CreateFormFile("file", r.Filename())
+	part, err := createFormFile(mpw, "file", r.Filename(), ct)
 	if err != nil {
 		kv["error"] = err
 		kv["filename"] = r.Filename()

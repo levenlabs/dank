@@ -7,11 +7,16 @@ import (
 	"fmt"
 	"github.com/levenlabs/dank/types"
 	"github.com/levenlabs/go-srvclient"
+	"io"
 	"io/ioutil"
+	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"os"
+	"path/filepath"
+	"strconv"
 )
 
 type Client struct {
@@ -37,6 +42,26 @@ func (d *Client) resolve() string {
 	return srvclient.MaybeSRV(d.hostname)
 }
 
+// createFormFile is multipart.Writer.CreateFormFile but it detects the mime
+func createFormFile(w *multipart.Writer, fieldname, filename string) (io.Writer, error) {
+	h := make(textproto.MIMEHeader)
+	h.Set("Content-Disposition",
+		fmt.Sprintf(`form-data; name=%s; filename=%s`,
+			strconv.Quote(fieldname), strconv.Quote(filename)))
+
+	var ct string
+	//try to determine the Content-Type from the filename
+	ext := filepath.Ext(filename)
+	if ext != "" {
+		ct = mime.TypeByExtension(ext)
+	}
+	if ct == "" {
+		ct = "application/octet-stream"
+	}
+	h.Set("Content-Type", ct)
+	return w.CreatePart(h)
+}
+
 // Upload uploads an array of bytes and uploads it to the assignment. If
 // assignment is nil, one will be created
 //
@@ -52,7 +77,7 @@ func (d *Client) Upload(body []byte, a *types.Assignment) (string, error) {
 
 	newBody := &bytes.Buffer{}
 	mpw := multipart.NewWriter(newBody)
-	part, err := mpw.CreateFormFile("file", a.Filename)
+	part, err := createFormFile(mpw, "file", a.Filename)
 	if err != nil {
 		return "", err
 	}

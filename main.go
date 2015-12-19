@@ -131,7 +131,8 @@ func getHandler(w http.ResponseWriter, r *http.Request, args *getArgs) (int, err
 			}
 		}
 		if attach {
-			w.Header().Set("Content-Disposition", "attachment; filename=" + args.Filename)
+			w.Header().Set("Content-Disposition",
+				"attachment; filename="+strconv.Quote(args.Filename))
 		}
 	}
 
