@@ -84,5 +84,5 @@ func main() {
 }
 
 func makeDank(f string, c *dank.Client) (string, error) {
-	return c.UploadFile(f, "")
+	return c.UploadFile(f, nil)
 }

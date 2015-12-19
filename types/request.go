@@ -90,7 +90,7 @@ func (r *AssignRequest) FileTypeID() int {
 	return stringTypeToIndex(r.FileType)
 }
 
-func (r *AssignRequest) URLValues() *url.Values {
+func (r *AssignRequest) URLValues() url.Values {
 	v := make(url.Values)
 	if r.FileType != "" {
 		v.Set("type", r.FileType)

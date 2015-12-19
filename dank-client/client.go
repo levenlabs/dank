@@ -37,24 +37,22 @@ func (d *Client) resolve() string {
 	return srvclient.MaybeSRV(d.hostname)
 }
 
-// Upload uploads an array of bytes and uploads it to filename. If filename is
-// empty then a new filename will be created and uploaded. If you need verify
-// the signature before uploading, you need to call Verify before calling
-// Upload.
+// Upload uploads an array of bytes and uploads it to the assignment. If
+// assignment is nil, one will be created
 //
 // Returns the filename uploaded to and error.
-func (d *Client) Upload(body []byte, filename string) (string, error) {
-	if filename == "" {
-		a, err := d.Assign(nil)
+func (d *Client) Upload(body []byte, a *types.Assignment) (string, error) {
+	var err error
+	if a == nil {
+		a, err = d.Assign(nil)
 		if err != nil {
 			return "", err
 		}
-		filename = a.Filename
 	}
 
 	newBody := &bytes.Buffer{}
 	mpw := multipart.NewWriter(newBody)
-	part, err := mpw.CreateFormFile("file", filename)
+	part, err := mpw.CreateFormFile("file", a.Filename)
 	if err != nil {
 		return "", err
 	}
@@ -70,7 +68,8 @@ func (d *Client) Upload(body []byte, filename string) (string, error) {
 		return "", err
 	}
 	q := u.Query()
-	q.Set("filename", filename)
+	q.Set("sig", a.Signature)
+	q.Set("filename", a.Filename)
 	u.RawQuery = q.Encode()
 
 	req, err := http.NewRequest("PUT", u.String(), newBody)
@@ -86,12 +85,12 @@ func (d *Client) Upload(body []byte, filename string) (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("unexpected code from dank: %d", resp.StatusCode)
 	}
-	return filename, err
+	return a.Filename, err
 }
 
 // UploadFile takes a diskFilename and reads the file off the disk and uploads
 // it using Upload
-func (d *Client) UploadFile(diskFilename, filename string) (string, error) {
+func (d *Client) UploadFile(diskFilename string, a *types.Assignment) (string, error) {
 	fr, err := os.Open(diskFilename)
 	if err != nil {
 		return "", err
@@ -100,7 +99,7 @@ func (d *Client) UploadFile(diskFilename, filename string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return d.Upload(b, filename)
+	return d.Upload(b, a)
 }
 
 // Assign gets a assignment from seaweed
