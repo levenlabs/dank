@@ -75,6 +75,7 @@ var headersToCopy = []string{
 	"Accept-Ranges",
 	"Expires",
 	"Cache-Control",
+	"Content-Disposition",
 }
 
 func getHandler(w http.ResponseWriter, r *http.Request, args *getArgs) (int, error) {
@@ -87,10 +88,14 @@ func getHandler(w http.ResponseWriter, r *http.Request, args *getArgs) (int, err
 		return 404, nil
 	}
 
+	attach := false
 	up := r.URL.Query()
 	// don't pass on the filename param
 	if up.Get("filename") == args.Filename {
 		up.Del("filename")
+	}
+	if _, ok := up["attachment"]; ok {
+		attach = true
 	}
 
 	code := 200
@@ -124,6 +129,9 @@ func getHandler(w http.ResponseWriter, r *http.Request, args *getArgs) (int, err
 					w.Header().Set(n, v)
 				}
 			}
+		}
+		if attach {
+			w.Header().Set("Content-Disposition", "attachment; filename=" + args.Filename)
 		}
 	}
 
