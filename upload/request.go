@@ -1,8 +1,8 @@
 package upload
 
 import (
-	"strconv"
 	"github.com/levenlabs/dank/types"
+	"strconv"
 )
 
 // compressedAssignRequest is just a compressed version of the AssignRequest

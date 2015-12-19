@@ -1,6 +1,5 @@
 package types
 
-
 // Assignment holds a signature and a filename which are needed to upload a
 // file and validate it. Since mapstructure doesn't support embedded structs
 // we have to copy these to main.go's uploadArgs

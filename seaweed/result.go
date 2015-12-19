@@ -1,8 +1,8 @@
 package seaweed
 
 import (
-	"strings"
 	"encoding/base64"
+	"strings"
 )
 
 //todo: RawURLEncoding

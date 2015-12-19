@@ -207,7 +207,7 @@ func Lookup(filename string, urlParams map[string]string) (string, error) {
 	if err != nil {
 		llog.Warn("error decoding filename in lookup", llog.KV{
 			"filename": filename,
-			"error": err,
+			"error":    err,
 		})
 		err = dhttp.NewError(http.StatusBadRequest,
 			"invalid filename sent: %s", filename)
