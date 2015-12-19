@@ -2,20 +2,26 @@
 package dank
 
 import (
-	"github.com/levenlabs/go-srvclient"
-	"github.com/levenlabs/dank/types"
-	"net/http"
-	"encoding/json"
-	"mime/multipart"
 	"bytes"
-	"net/url"
+	"encoding/json"
 	"fmt"
-	"os"
+	"github.com/levenlabs/dank/types"
+	"github.com/levenlabs/go-srvclient"
 	"io/ioutil"
+	"mime/multipart"
+	"net/http"
+	"net/url"
+	"os"
 )
 
 type Client struct {
 	hostname string
+}
+
+// AssignOptions mirrors an AssignRequest but can be constructed without
+// requiring the dank/types package
+type AssignOptions struct {
+	types.AssignRequest
 }
 
 // NewClient retuns a new dank Client for the given hostname, the hostname will
@@ -39,7 +45,7 @@ func (d *Client) resolve() string {
 // Returns the filename uploaded to and error.
 func (d *Client) Upload(body []byte, filename string) (string, error) {
 	if filename == "" {
-		a, err := d.Assign()
+		a, err := d.Assign(nil)
 		if err != nil {
 			return "", err
 		}
@@ -98,8 +104,18 @@ func (d *Client) UploadFile(diskFilename, filename string) (string, error) {
 }
 
 // Assign gets a assignment from seaweed
-func (d *Client) Assign() (*types.Assignment, error) {
-	resp, err := http.Get("http://" + d.resolve() + "/assign")
+// If you want to have no restrictions/options on the file, send a nil
+// AssignOptions
+func (d *Client) Assign(ar *AssignOptions) (*types.Assignment, error) {
+	u, err := url.Parse("http://" + d.resolve() + "/assign")
+	if err != nil {
+		return nil, err
+	}
+	if ar != nil {
+		u.RawQuery = ar.URLValues().Encode()
+	}
+
+	resp, err := http.Get(u.String())
 	if err != nil {
 		return nil, err
 	}

@@ -3,6 +3,7 @@ package types
 import (
 	"github.com/levenlabs/go-llog"
 	"gopkg.in/validator.v2"
+	"net/url"
 	"strconv"
 	"time"
 )
@@ -64,7 +65,6 @@ func validateType(v interface{}, _ string) error {
 	return nil
 }
 
-
 // expires returns at what unix time a signature generated with this request
 // expires or 0 if it never expires
 func (r *AssignRequest) Expires() int64 {
@@ -88,6 +88,26 @@ func (r *AssignRequest) MaxSize() int64 {
 
 func (r *AssignRequest) FileTypeID() int {
 	return stringTypeToIndex(r.FileType)
+}
+
+func (r *AssignRequest) URLValues() *url.Values {
+	v := make(url.Values)
+	if r.FileType != "" {
+		v.Set("type", r.FileType)
+	}
+	if r.MaxSizeStr != "" {
+		v.Set("max_size", r.MaxSizeStr)
+	}
+	if r.Replication != "" {
+		v.Set("replication", r.Replication)
+	}
+	if r.TTL != "" {
+		v.Set("ttl", r.TTL)
+	}
+	if r.SigExpiresStr != "" {
+		v.Set("sig_expires", r.SigExpiresStr)
+	}
+	return v
 }
 
 func FileTypeFromID(i int) string {
